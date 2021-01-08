@@ -1,0 +1,9 @@
+Why are banks paying me big bucks for something as simple as Kubernetes? When anybody — anybody can learn in under three hours?
+If you doubt me, I challenge you to give it a try! By the end of this article, you will be able to run a Microservice based application on a Kubernetes Cluster. And I guarantee this because it’s how I introduce our clients to Kubernetes.
+What does this guide do differently from the other resources, Rinor?
+Quite a lot! Most guides start with the simple stuff: Kubernetes concepts and and kubectl commands. These guides assume the reader knows about application development, Microservices, and Docker containers.
+In this Article we will go from :
+Running a Microservice based application on your computer.
+Building container images for each service of the Microservice application.
+Introduction to Kubernetes. Deploying a Microservice based application into a Kubernetes Managed Cluster.
+The gradual build up provides the depth required for a mere mortal being to grasp the simplicity of Kubernetes. Yes Kubernetes is simple when you know the context it is used in. Without further ado lets see what we will build.
