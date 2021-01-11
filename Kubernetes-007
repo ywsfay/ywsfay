@@ -1,0 +1,143 @@
+Production Ready CI/CD Pipeline with Kubernetes
+Container-based microservices architectures have changed the way development and operations teams test and deploy modern application/services. Containers help companies modernize by making it easier to scale and deploy applications, but containers have also introduced new challenges and more complexity by creating an entirely new infrastructure ecosystem.
+Large and small software companies are now deploying thousands of container instances daily, and that’s a complexity of scale they have to manage. So how do they do it?
+The magic is kubernetes.
+Originally developed by Google, Kubernetes is an open-source container orchestration platform designed to automate the deployment, scaling, and management of containerized applications.
+In this tutorial, let’s see how we can include kubernetes in our existing traditional CI/CD pipelines and achieve high availability of our services and get the ability to do the code changes in production at anytime(yes, anytime without affecting the services).
+Tools Used
+This tutorial believes you have basic/good understanding of below topics.
+Kubernetes (Our service runs on kubernetes)
+Jenkins & Jenkins shared library (CI/CD tool)
+GIT (SCM tool)
+HAProxy (Network Load balancer)
+Ansible (Configuration management tool)
+CI/CD setup
+Jenkins Server — Installed with Docker, Ansible and Kubectl (Copy kube admin configuration .kube from K8s master to Jenkins server home directory)
+K8s cluster with one master and two nodes
+HAProxy Server
+CI/CD Pipeline
+Image for post
+CI/CD using K8s
+GIT & Jenkins
+Let’s go in detail of how we configure all these various tools and make it work perfectly.
+Our example app called as shoppingapp has three repositories in GitHub and each repo is for a particular microservice.
+shoppingapp-home for home page microservice.
+shoppingapp-kids for kids page microservice.
+shoppingapp-mens for mens page microservice.
+Similarly we have three Jenkins Pipeline job for three repos and GitHub webhook is set up in the repositories to automatically start the build when there is a new commit.
+Image for post
+Jenkins pipeline job
+Let’s look at the configuration of shoppingapp-home Job.
+Image for post
+Image for post
+Jenkins Pipeline configuration
+The repo url in the pipeline job shoppingapp-home points to shoppingapp-home GitHub repositority. Similarly the other two pipeline job points to their respective repositories.
+Below is the Jenkinsfile in the shoppingapp-home repository.
+
+Jenkinsfile for shoppingapp-home repository
+Below are the different steps in the pipeline job. The job declares a couple of variables, app — refers to our application name, service — refers to our service name, registryCredentials — is our dockerhub username and password saved in jenkins, imageid — the docker container image name with a tag, here tag will be the jenkins build number.
+In the above Jenkinsfile, I have used shared library (Incase if you are not familiar with shared library refer Jenkins website).
+In the stage ‘Build’ I call my function dockerbuild in the shared library and passing imageid as an argument. Below is the definition of the dockerbuild function.
+
+Build stage
+It just calls docker.build with the image id we passed as an argument which basically triggers ‘docker build -t imageid .’ and that creates a docker image based on the Dockerfile. We will look the Dockerfile little later.
+Next step is ‘Test’ where you can run test cases. I current don’t execute any test cases as this is very basic app.
+
+Test stage
+Next we have ‘Publish’ stage which again calls a function imagepush with imageid as an argument in shared library. The function basically login into Docker Hub and pushes the image to Docker Hub.
+
+Publish stage
+Next is the ‘Pull Playbook Repo’ just cloning the repo which has all our playbooks.
+
+Pull Playbook Repo stage
+Next is the ‘Deploy’ stage which triggers the playbook to deploy the container into Kubernetes cluster.
+
+Deploy stage
+Now we have fair amount of clarity on how we develop and maintain repos for each microservices and configure Jenkins Pipeline to create Docker image, push image to Docker Hub, trigger Ansible Playbook to deploy to K8s cluster. Let’s see how our Dockerfile looks like.
+Dockerize application
+
+Dockerfile
+The Dockerfile uses python:3.7.3-alpine3.9 as the base image and we install a flask app to just print out some text. Refer the shoppingapp-home GitHub repo for the code. The app runs on the port 5000.
+Ansible Playbook to takeover further
+Below is the Ansible Playbook deploy_k8s.yml which get triggered from Jenkins Pipeline job.
+
+Ansible to deploy K8s components
+Kubernetes Cluster
+Let’s look at the K8s cluster now. We have a master node and two worker nodes in the cluster.
+ubuntu@kube-master:~$ kubectl get nodes
+NAME STATUS ROLES AGE VERSION
+kube-master Ready master 10d v1.19.4
+kube-worker1 Ready <none> 10d v1.19.4
+kube-worker2 Ready <none> 9d v1.19.4
+Also, we have installed Traefik Ingress controller as a deployment of two replicas on the cluster.
+ubuntu@kube-master:~$ kubectl get pods -n kube-system|grep ingress
+traefik-ingress-controller-6b7f594d46–5jqzq 1/1 Running 0 7d12h
+traefik-ingress-controller-6b7f594d46-vvfch 1/1 Running 0 8d
+To deploy/expand our services seamlessly, we have organized our Ansible Playbook repo in a particular format.
+Image for post
+Folder structure of K8s service definitions
+Every service has two files deployment and service specific to that service and a common directory has ingress configuration definition.
+
+deployment.yml
+The above deployment file is generic which gets all the variable from Jenkins Pipeline Job that is transferred to deploy_k8s.yml and that will get transferred to this k8s deployment.yml. So, to expand the application with more microservices we just need to create appropriate folder structure in Ansible Playbook repo and a corresponding Jenkins Pipeline with a ingress configuration and everything will continue to work perfectly.
+After the deployment, we need to create a service to expose the deployment. The service maps the port 80 to the pods port 5000.
+
+service.yml
+Deployment.yml and Service.yml file is common for all the microservices we have under shoppingapp service.
+Also, let’s look at the ingress configuration in common/ingress.yml. The ingress host name is app.shoppingapp.com which has path based rules to redirect the traffic to particular service.
+
+ingress.yml
+HAProxy Inclusion
+Also, I have used HAProxy load balancer to balance the traffic between two nodes in k8s cluster. I have added frontend and backend to the existing HAProxy config file. Backend servers are the worker node in k8s cluster.
+frontend http_front
+bind *:80
+mode http
+default_backend http_back
+backend http_back
+balance roundrobin
+server kube 172.31.35.122:32365 check
+server kube 172.31.40.13:32365 check
+port 32365 is the one exposed by traefik-ingress-service service. DNS is created for the hostname mentioned in the ingress.yml app.shoppingapp.com which resolves to the HAProxy IP (I used AWS Route 53 internal domain for creating domain and DNS records).
+ubuntu@jenkins_ansible:~$ kubectl describe svc traefik-ingress-service -n kube-system
+Name: traefik-ingress-service
+Namespace: kube-system
+Labels: <none>
+Annotations: <none>
+Selector: k8s-app=traefik-ingress-lb
+Type: NodePort
+IP: 10.102.149.216
+Port: web 80/TCP
+TargetPort: 80/TCP
+NodePort: web 32365/TCP
+Endpoints: 10.244.1.99:80,10.244.3.19:80
+Port: admin 8080/TCP
+TargetPort: 8080/TCP
+NodePort: admin 31387/TCP
+Endpoints: 10.244.1.99:8080,10.244.3.19:8080
+Session Affinity: None
+External Traffic Policy: Cluster
+Events: <none>
+Put it all together — Understanding the real flow
+Now we have seen all the components that we used to create this nice CI/CD Pipeline for our microservice application. Let’s put all together and understand how the flow works.
+Developers commit code in microservice repo (shoppingapp-kids)
+Webhook configured in GitHub notifies the Jenkins and triggers corresponding Pipeline job (shoppingapp-kids)
+The Pipeline job clones the shoppingapp-kids repository and starts executing the Jenkinsfile.
+Build step in the Jenkinsfile creates Docker image(deepanmurugan/shoppingapp-kids:21) using Dockerfile in the cloned shoppingapp-kids repo.
+The docker image is tested, if tests are passed push the image to Docker Hub.
+Trigger Ansible Playbook to deploy the Docker image to K8s cluster with app_name, service_name and image_id variable.
+The Ansible Playbook will read all the K8s definition for deployment/servive/ingress and create required components in the cluster.
+Add a new microservice to the pipeline in no time
+Let’s assume that we had a request to include one more microservice to the architecture called shoppingapp-ladies. Developers have created a repo called shoppingapp-ladies and commited the code with same Docker and Jenkinsfile, the only change is the service_name=shoppingapp-ladies variable in Jenkinsfile.
+Image for post
+modified folder structure after adding new microservice
+Modify the common/ingress.yml and include a new path called /ladies and the endpoint is the shoppingapp-ladies-service.
+- path: /ladies
+backend:
+serviceName: shoppingapp-ladies-service
+servicePort: http
+Clone the existing Jenkins Pipeline job and create a new Pipeline job called shoppingapp-ladies.
+Image for post
+Jenkins Pipeline Job List
+In the pipeline section of the new job shoppingapp-ladies, just add the new repository URL. Execute the pipeline job and that’s it. It will create a new deployment, service and modify the ingress.
+ubuntu@jenkins_ansible:/opt/python$ curl app.shoppingapp.com/ladies
+Welcome to shoppingapp — Ladies section — shoppingapp-ladies-deloyment-656f6f9d9f-dms8w
