@@ -1,0 +1,165 @@
+Kubernetes Services — Part 1
+In this post, we will look at the K8s(Kubernetes) services. This blog post covers the following:
+- What are services & examples
+- Types of services
+- Look into each service type with practical examples
+In Kubernetes, a Service is an abstraction which defines a logical set of Pods and a policy by which to access them (sometimes this pattern is called a micro-service).
+Cool yay! we now know the definition, but why do we need a service?
+Why can’t users just talk directly with the pods that host the applications? why add more complexity?
+Kubernetes pods are ephemeral in nature. Deployment object(s) can create and destroy pods dynamically. Each pod does have it’s own IP address, hence in a deployment, the set of pods running change all the time, so do the IP address for the pods
+This leads to a problem: if some set of pods (call them “backends”) provides functionality to other pods (call them “frontends”) inside your cluster, how do the frontends find out and keep track of which IP address to connect to, so that the frontend can use the backend part of the workload?
+Let’s try to understand the problem, by considering an example consisting of a set of different pods as following:
+A set of pods that serve frontend requests
+A set of pods that serve backend requests
+A set of pods that server data layer requests
+Image for post
+Services example
+If there were no services the pods would have to connect with other pods or any other object by themselves. Services enable connectivity between the group of pods. They also enable loose-coupling between microservices in applications.
+How do pods connect externally?
+Let’s say we deployed a pod which is hosting an application, can one directly talk to the pod using it’s IP address? Something like http://10.264.0.2?
+Well not really…
+Let’s understand why:
+Image for post
+Reaching the pod externally
+Clearly, the user cannot talk with the pod as they are in a separate network. So what are the options for the users to reach the application hosted in the pod?
+This is where the service object in K8s helps, it’s like glue which connects different objects in K8s (similar to what routers do in networking i.e. connect different networks). The service is like a virtual server and has its own IP address within the K8s cluster it resides in.
+Image for post
+Service connecting the external user to POD
+Different types of services?
+Kubernetes ServiceTypes allow you to specify what kind of service you want. The default is ClusterIP .
+Let’s look into each of the serviceTypes:
+Image for post
+Service Type1: NodePort
+Image for post
+NodePort service and related ports
+NodePort service helps expose the Service on each Node’s IP at a static port (the NodePort). A ClusterIP Service, to which the NodePort Service routes are automatically created. One would be able to contact the NodePort Service, from outside the cluster, by requesting <NodeIP>:<NodePort>.
+The port on the POD is called the targetPort and the one connecting the NodePort service to the POD is called port .
+NodePort example
+Let’s try to understand the concepts here with some practical examples. for all examples will be using minikube, but one could use this for GKE, EKS, etc, and should mostly work.
+Let’s start with creating a deployment using the YAML file below. Some key things to note, each container is using the port 80 and has a label called app:nginx
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: my-nginx-deploy
+    labels:
+        app: nginx
+spec:
+    replicas: 2
+    selector:
+        matchLabels:
+            app: nginx
+    template:
+        metadata:
+            labels:
+                app: nginx
+        spec:
+            containers:
+            - name: test-nginx
+              image: nginx:alpine
+              ports:
+              - containerPort: 80
+After applying the YAML file we see that two PODs are up and running. Each POD is running nginx application service on port 80
+kubectl apply -f nginx-deploy.yml
+deployment.apps/my-nginx-deploy created
+kubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+my-nginx-deploy-6b5d6b54bc-7pbmk   1/1     Running   0          22s
+my-nginx-deploy-6b5d6b54bc-glhnt   1/1     Running   0          22s
+The IPs assigned to the pods are
+kubectl describe pod my-nginx-deploy-6b5d6b54bc-7pbmk | grep -i IP: | head -1
+IP:           172.17.0.4
+kubectl describe pod my-nginx-deploy-6b5d6b54bc-glhnt | grep -i IP: | head -1
+IP:           172.17.0.3
+Can Pods above talk to each other? let’s find out. We will try to connect to a pod and try reaching the other pod from there.
+kubectl get pods
+NAME                               READY   STATUS    RESTARTS   AGE
+my-nginx-deploy-6b5d6b54bc-7pbmk   1/1     Running   0          7m47s
+my-nginx-deploy-6b5d6b54bc-glhnt   1/1     Running   0          7m47s
+kubectl exec my-nginx-deploy-6b5d6b54bc-7pbmk -it sh
+/ # apk add curl
+/ # curl http://172.17.0.3:80
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+/ # exit
+So looks like the pods can talk to each other. Some things to note here
+Pods are ephemeral, the IP address for that pod is most likely to change. Therefore we cannot rely on IPs to communicate.
+Each Pod gets its IP address. It would be impossible for the client to know about the IP addresses of all pods.
+Also, the pod IP addresses above cannot be reached externally, try it!
+So how do we reach the PODs externally?
+To reach the pods from outside the cluster, one needs to expose the port on the host machine so that the traffic is redirected to a port of the container. NodePort Service provides that capability.
+Let’s create a NodePort service
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  type: NodePort
+  selector:
+    app: nginx
+  ports:
+      # By default the `targetPort` is set to the same value as the `port` field.
+    - port: 80
+      targetPort: 80
+      # Optional field
+      # By default and for convenience, the Kubernetes control plane will allocate a port from a range (default: 30000-32767)
+      nodePort: 30007
+Let’s apply the YAML file and validate the service gets created
+kubectl apply -f nodeport.yml
+service/my-service created
+kubectl get svc
+NAME         TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+my-service   NodePort    10.110.8.243   <none>        80:30007/TCP   12m
+NodePort service created has a virtual IP (10.110.8.243) assigned to it called ClusterIp, using which it can be accessed internally. To access the service, since we are using minikube, let’s see where the service is hosted for external usage.
+minikube service list
+|-------------|------------|--------------|-------------------------
+|  NAMESPACE  |    NAME    | TARGET PORT  |            URL            |
+|-------------|------------|--------------|-------------------------
+| default     | my-service |           80 |http://192.168.64.2:30007 
+|-------------|------------|--------------|-------------------------
+And voila!! we can now reach the Nginx application hosted in the PODs from outside of the K8s cluster.
+curl 192.168.64.2:30007
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Welcome to nginx!</h1>
+<p>If you see this page, the nginx web server is successfully installed and
+working. Further configuration is required.</p>
+<p>For online documentation and support please refer to
+<a href="http://nginx.org/">nginx.org</a>.<br/>
+Commercial support is available at
+<a href="http://nginx.com/">nginx.com</a>.</p>
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+So far we looked at the basics of service and NodePort service with examples. In the next blog post (continuation of this post) we will look at other types of services in K8s. 
