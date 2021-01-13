@@ -1,0 +1,61 @@
+Deploy a Containerized Application on AWS with Terraform
+Introduction
+At its core, cloud computing is just about running an application on third-party hardware. However, over the last decade, modern cloud applications required increasingly complex infrastructure in order to run securely, guarantee high availability, and scale smoothly when the number of users increases.
+Let us take the case of AWS. The number of infrastructure resources to provision for a simple (single-tenant) application goes easily above 50, not considering the need for different environments such as staging, development, and production. This is simply impossible to maintain using the AWS web interface and it is where Infrastructure-as-a-Code (IaaC) software comes to the rescue. Nowadays, the de-facto standard for IaaC is Terraform which integrates with virtually all the available cloud providers and features a highly specialized domain-specific language called HCL. Terraform is a great tool with a very large community and a lot of open-source modules readily usable in the Terraform Registry. However, despite all the available documentation, the learning curve can be pretty steep, especially without a deep understanding of AWS infrastructure.
+For a personal project, I recently started developing an API application based on a containerized service-oriented architecture. I decided to run it on AWS Elastic Container Service (ECS), a fully manage container orchestration platform similar to Kubernetes. The application I wanted to build had some strict but quite standard requirements:
+It must run on manually manageable EC2 instances. Giving up control of the underlying computing instances by choosing the Fargate launch mode was not an option for my project. However, if the requirements allow it, the Fargate deployment is considerably easier to manage (but more expensive).
+The application must run inside a Virtual Private Cloud (VPC) in front of a public-facing Application Load Balancer (ALB) which only allows encrypted HTTPS communications from the clients.
+The Docker container instances of each service must be able to communicate with each other using simple DNS names. In this way, containers can be easily destroyed and re-spawn without any application downtime.
+Docker container instances must be able to communicate with the Internet but not to be reachable from the Internet
+It was surprisingly difficult to find online a comprehensive guide to the deployment on ECS of an application respecting the requirements above and with the usage of readily available modules. The aim of this post is to provide exactly that along with some (hopefully) useful and reusable code snippets and Terraform modules for deploying an ECS application in just a few commands without reinventing the wheel. But now, let’s dive in.
+Architecture Overview
+The figure below shows the high-level architecture of the infrastructure we want to provision. This is a single-tier architecture that can fit several simple web and API application use cases.
+Image for post
+Simplified architecture of the AWS infrastructure provisioned in this post
+The main building blocks of this infrastructure are the following:
+The network consisting of a standard VPC with public and private subnet and an Internet Gateway to grant public Internet access to the ECS services
+A private Route53 DNS zone for service discovery and public-facing interface through an ALB configured for HTTPS encrypted traffic
+Few EC2 instances within an autoscaling group used as underlying computing infrastructure for the ECS cluster
+An ECS cluster running two communicating services. Only one of these services can be reached from the public Internet through the ALB.
+Let’s see the Terraform implementation step-by-step.
+Infrastructure Details
+In this section, I present in detail the Terraform code snippets to provision the infrastructure. As you can see, I use several battle-tested Terraform modules since for IaaC code the motto “avoid to reinvent the wheel” is even more important than usual.
+Networking
+Every application running on AWS should do so within a VPC, usually in a private subnetwork, to improve security and grant isolation from the public Internet. From within a VPC, container instances can communicate to the Internet by means of an Internet gateway linked with a suitable network address translator (NAT). Setting up this whole infrastructure requires the provisioning of several resources and becomes quickly cumbersome. However, the amazing official VPC Terraform module allows doing that in just a few lines of code:
+
+A standard VPC provisioning with two subnets in different availability zones.
+Service Discovery and Encrypted Communication
+In a standard containerized application, communications can usually happen:
+from external clients who wants to query the application public API
+internally, among the services composing the application
+These communication patterns require different resources. For the first one, since we want HTTPS encrypted traffic, an ALB with a valid certificate is the appropriate solution. Do not forget to add also a suitable DNS record to point from the domain name associated with the certificate (such as example.com) to the ALB. Otherwise, it will be unreachable.
+For service-to-service communication, ECS provides instead a very convenient way for creating a private DNS namespace enabling all
+registered services to reach each other using a simple name of the form <dns_namespace>.<service_name>.
+Using again a couple of very handy official modules from the Terraform Registry, the infrastructure can be provisioned with the following code:
+
+Application Load Balancer with HTTPS target group using an AWS-provided certificate and private DNS namespace for internal service discovery.
+ECS Cluster with Autoscaling Group
+As mentioned in the introduction, the ECS services should be launched in EC2 mode if full control of the infrastructure is required. However, in order to avoid manually manage the EC2 instances, it is convenient to associate the cluster with an autoscaling group and let it decide which instances to spawn dynamically. This is enabled by the recently released capacity provider for ECS.
+Again, one can find amazing resources to simplify provisioning. After some research, I ended up using a module created by Jetbrains featuring also optional usage of spot instances. If the application allows it, this can save a huge amount of money.
+
+Create an ECS cluster with EC2 autoscaling group EC2 using spot instances.
+Services
+An ECS cluster without any service running in it is not very useful. Here we see how to provision services with a single container definition. This should be enough for many use cases, but sometimes multiple container definitions are necessary, for instance when spawning a distributed application with multiple nodes that must communicate (e.g. a message queue with broker and nodes).
+The first step consists of choosing a public image from DockerHub or a private one stored on an ECR repository. for convenience, one can use this simple shell script to bundle together all the steps necessary to push a private image to an ECR repository.
+The second step is to create the service running in the VPC provisioned above. To do so, several resources are needed:
+a task definition that specifies the task to run
+a security group for correct task isolation
+an optional service discovery name to allow communication with other services in the cluster
+the ECS service itself
+For simplifying the provisioning, one can use this Terraform module I created. It provisions all the above resources with optional logging and association with an autoscaling group of EC2 instances. However, this module strips out some fine-grained configuration of the ECS service to reduce the complexity and it is therefore tailored only for simple (but quite common) use cases.
+In the snippet below you can see how to use the module for provisioning an ECS service with service discovery enabled and registered to an ALB target group on the desired application port.
+
+Provision single task ECS service
+Putting all together
+Using the above code snippets, the provision of the overall infrastructure is as simple as:
+terraform init
+terraform apply -auto-approve
+Despite its simplicity, the command above provisions more than 50 different resources on AWS for a sample application composed of 2 services. However, there are still several common features missing in the code presented in this post:
+the integration with a suitable database system either managed by AWS or running within the ECS infrastructure as a container
+autoscaling policies for the ECS services depending on some common metrics
+persistence storage for the containers using Elastic Block Storage or other technologies provided by AWS
