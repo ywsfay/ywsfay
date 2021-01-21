@@ -1,0 +1,36 @@
+CPU Throttling in Kubernetes: A Postmortem
+In this article, we will attempt to go deep into the issue that degraded performance of our applications and how we finally solved that issue.
+Background
+At Grofers, we follow a microservice architecture where all critical components like payments, carts, inventory, etc. are organised as a microservice. Therefore developers cannot work on multiple services at the same time in the same namespace. This led us to adopt a design where each developer has his own namespace with all services deployed in an isolated environment for testing and debugging. This is what we internally call ‘Grofers-in-a-namespace’. To achieve this, we have developed an in-house tool called mft. Mft is used to create new namespaces in Kubernetes and inject necessary dependencies from Vault and Consul.
+All the services necessary to run a copy of Grofers are then deployed via common Jenkins setup. The services are then exposed via ingress for developers to use with the test suite or use as the endpoint for debug apps for application testing.
+The Issue
+We adopted USE-RED dashboards for our services to help us track critical metrics. This allowed us to optimise the infrastructure further for getting maximum performance out of it.
+When we started to analyse such metrics we observed that certain applications took a large amount of time to start and get ready, something that developers did not observe in the local setup. Also, some of our Jenkins jobs took a lot of time to create the environments and get them ready, something that we previously did not account for. This led us to revisit all metrics to identify what could have caused this slow startup in our Kubernetes infrastructure.
+Furthermore, these issues were not being observed in production environments. The production deployments have slightly different manifests, with much more liberal CPU and memory allocation. Also, our production cluster has a lot more headroom for scaling which led us to believe that it is an infrastructure specific issue.
+Root Cause
+After debugging for almost a month, we decided to revisit our testing and Kubernetes setup to help isolate the problem. During the optimisation process of our RAV (Regression And Verification) testing, we started plotting all Kubernetes metrics that could affect our containers performance. One interesting metric that we identified was CPU throttling (container_cpu_cfs_throttled_seconds_total). Once we plotted that metric, we found shocking and interesting results. Some of our most critical services were getting CPU throttled and we had no idea. Furthermore, we observed that in our CI and dev environments, this was happening a lot with some specific containers at startup time — these were containers where we were running some kind of CPU intensive operation at startup time.
+Image for post
+We immediately started planning a cause and effect analysis and came up with the following causes:
+Incorrect CPU limit of containers that causes the application to hit the limits quickly causing Kubernetes to throttle it.
+Background activity like GC that triggers after some time causing CPU cycles to increase. This can also be caused by incorrect heap sizes for JVM based applications.
+Some periodic CPU intensive activity on the node that steals CPU cycles available to cgroups, also hinting towards CPU limits that were not decided to keep periodic spikes in the application logic
+What is CPU Throttling
+Almost all container orchestrators rely on the kernel control group (cgroup) mechanisms to manage resource constraints. When hard CPU limits are set in a container orchestrator, the kernel uses Completely Fair Scheduler (CFS) Cgroup bandwidth control to enforce those limits. The CFS-Cgroup bandwidth control mechanism manages CPU allocation using two settings: quota and period. When an application has used its allotted CPU quota for a given period, it gets throttled until the next period.
+All CPU metrics for a cgroup are located in /sys/fs/cgroup/cpu,cpuacct/<container>. Quota and period settings are in cpu.cfs_quota and cpu.cfs_period .
+Image for post
+A breakdown of CPU resources in cgroup
+You can also view throttling metrics in cpu.stat. Inside cpu.stat you’ll find:
+nr_periods — number of periods that any thread in the cgroup was runnable
+nr_throttled — number of runnable periods in which the application used its entire quota and was throttled
+throttled_time — sum total amount of time individual threads within the cgroup were throttled.
+Monitoring Memory Limits for OOM Kills
+Another interesting metric to consider is the number of container restarts due to OOM. This highlights the containers are that frequently hitting the memory limits specified in their Kubernetes manifests.
+kube_pod_container_status_terminated_reason{reason=”OOMKilled”})
+Resolution
+So a quick solution to the problem was increasing the limits between 10–25% to ensure that the peaks are hit less often, or avoided altogether.
+After identification of the root cause, we came up with some possible fixes. We took into account the following considerations:
+CPU throttling is primarily because of low CPU limits. Its limits that actually affect the Cgroup behaviour. So a quick solution to the problem was increasing the limits between 10–25% to ensure that the peaks are hit less often, or avoided altogether. This also does not affect the resource requirements for starting pods as requests remain untouched.
+Meanwhile, for certain intensive applications, especially those utilising JVM based systems, we decided to profile the application again for correct CPU and memory requirements as JVM is notorious for high resource consumption. Tweaking JVM parameters will be the right fix in the long term for such applications.
+What We Learned and Next Steps
+It was an insightful experience for us. We realised that some of the lesser looked (or in this case overlooked) metrics can have a deep impact on application performance. We also had some amazing insights into the CFS and cgroups, and how the kernel handles resource virtualisation.
+Based on this exercise, we came up with an application profiling plan for our major applications and added CPU throttling to one of our core suspects of poor application performance.
