@@ -1,0 +1,141 @@
+What Is Kubernetes? An Introduction to the Wildly Popular Container Orchestration Platform
+This is an update of a post originally published in July, 2018.
+
+Container-based microservices architectures have profoundly changed the way development and operations teams test and deploy modern software. Containers help companies modernize by making it easier to scale and deploy applications, but containers have also introduced new challenges and more complexity by creating an entirely new infrastructure ecosystem.
+
+Large and small software companies alike are now deploying thousands of container instances daily, and that’s a complexity of scale they have to manage. So how do they do it?
+
+Enter the age of Kubernetes.
+
+Originally developed by Google, Kubernetes is an open-source container orchestration platform designed to automate the deployment, scaling, and management of containerized applications. In fact, Kubernetes has established itself as the defacto standard for container orchestration and is the flagship project of the Cloud Native Computing Foundation (CNCF), backed by key players like Google, AWS, Microsoft, IBM, Intel, Cisco, and Red Hat.
+
+Kubernetes makes it easy to deploy and operate applications in a microservice architecture. It does so by creating an abstraction layer on top of a group of hosts, so that development teams can deploy their applications and let Kubernetes manage:
+
+Controlling resource consumption by application or team
+Evenly spreading application load across a host infrastructure
+Automatically load balancing requests across the different instances of an application
+Monitoring resource consumption and resource limits to automatically stop applications from consuming too many resources and restarting the applications again
+Moving an application instance from one host to another if there is a shortage of resources in a host, or if the host dies
+Automatically leveraging additional resources made available when a new host is added to the cluster
+Easily performing canary deployments and rollbacks
+See also: Docker vs. Kubernetes: It’s Not About One or the Other
+
+OK, but why all the buzz? Why is Kubernetes so popular?
+As more and more organizations move to microservice and cloud native architectures that make use of containers, they’re looking for strong, proven platforms. Practitioners are moving to Kubernetes for four main reasons:
+
+1. Kubernetes helps you move faster. Indeed, Kubernetes allows you to deliver a self-service Platform-as-a-Service (PaaS) that creates a hardware layer abstraction for development teams. Your development teams can quickly and efficiently request the resources they need. If they need more resources to handle additional load, they can get those just as quickly, since resources all come from an infrastructure shared across all your teams.
+
+No more filling out forms to request new machines to run your application. Just provision and go, and take advantage of the tooling developed around Kubernetes for automating packaging, deployment, and testing, such as Helm (more below).
+
+2. Kubernetes is cost efficient. Kubernetes and containers allow for much better resource utilization than hypervisors and VMs do; because containers are so light weight, they require less CPU and memory resources to run.
+
+3. Kubernetes is cloud agnostic. Kubernetes runs on Amazon Web Services (AWS), Microsoft Azure, and the Google Cloud Platform (GCP), and you can also run it on-premise. You can move workloads without having to redesign your applications or completely rethink your infrastructure—which lets you to standardize on a platform and avoid vendor lock-in.
+
+In fact, companies like Kublr, Cloud Foundry, and Rancher provide tooling to help you deploy and manage your Kubernetes cluster on-premise or on whatever cloud provider you want.
+
+4. Cloud providers will manage Kubernetes for you. As noted earlier, Kubernetes is currently the clear standard for container orchestration tools. It should come as no surprise, then, that major cloud providers are offering plenty of Kubernetes-as-a-Service-offerings. Amazon EKS, Google Cloud Kubernetes Engine, Azure Kubernetes Service (AKS), Red Hat Openshift, and IBM Cloud Kubernetes Service all provide a full Kubernetes platform management, so you can focus on what matters most to you—shipping applications that delight your users.
+
+So, how does Kubernetes work?
+The central component of Kubernetes is the cluster. A cluster is made up of many virtual or physical machines that each serve a specialized function either as a master or as a node. Each node hosts groups of one or more containers (which contain your applications), and the master communicates with nodes about when to create or destroy containers. At the same time, it tells nodes how to re-route traffic based on new container alignments.
+
+The following diagram depicts a general outline of a Kubernetes cluster:
+
+
+
+The Kubernetes master
+The Kubernetes master is the access point (or the control plane) from which administrators and other users interact with the cluster to manage the scheduling and deployment of containers. A cluster will always have at least one master, but may have more depending on the cluster’s replication pattern.
+
+The master stores the state and configuration data for the entire cluster in ectd, a persistent and distributed key-value data store. Each node has access to ectd and through it, nodes learn how to maintain the configurations of the containers they’re running. You can run etcd on the Kubernetes master, or in standalone configurations.
+
+Masters communicate with the rest of the cluster through the kube-apiserver, the main access point to the control plane. For example, the kube-apiserver makes sure that configurations in etcd match with configurations of containers deployed in the cluster.
+
+The kube-controller-manager handles control loops that manage the state of the cluster via the Kubernetes API server. Deployments, replicas, and nodes have controls handled by this service. For example, the node controller is responsible for registering a node and monitoring its health throughout its lifecycle.
+
+Node workloads in the cluster are tracked and managed by the kube-scheduler. This service keeps track of the capacity and resources of nodes and assigns work to nodes based on their availability.
+
+The cloud-controller-manager is a service running in Kubernetes that helps keep it “cloud-agnostic.” The cloud-controller-manager serves as an abstraction layer between the APIs and tools of a cloud provider (for example, storage volumes or load balancers) and their representational counterparts in Kubernetes.
+
+Nodes
+All nodes in a Kubernetes cluster must be configured with a container runtime, which is typically Docker. The container runtime starts and manages the containers as they’re deployed to nodes in the cluster by Kubernetes. Your applications (web servers, databases, API servers, etc.) run inside the containers.
+
+Each Kubernetes node runs an agent process called a kubelet that is responsible for managing the state of the node: starting, stopping, and maintaining application containers based on instructions from the control plane. The kubelet collects performance and health information from the node, pods and containers it runs and shares that information with the control plane to help it make scheduling decisions.
+
+The kube-proxy is a network proxy that runs on nodes in the cluster. It also works as a load balancer for services running on a node.
+
+The basic scheduling unit is a pod, which consists of one or more containers guaranteed to be co-located on the host machine and can share resources. Each pod is assigned a unique IP address within the cluster, allowing the application to use ports without conflict.
+
+You describe the desired state of the containers in a pod through a YAML or JSON object called a Pod Spec. These objects are passed to the kubelet through the API server.
+
+A pod can define one or more volumes, such as a local disk or network disk, and expose them to the containers in the pod, which allows different containers to share storage space. For example, volumes can be used when one container downloads content and another container uploads that content somewhere else.
+
+Since containers inside pods are often ephemeral, Kubernetes offers a type of load balancer, called a service, to simplify sending requests to a group of pods. A service targets a logical set of pods selected based on labels (explained below). By default, services can be accessed only from within the cluster, but you can enable public access to them as well if you want them to receive requests from outside the cluster.
+
+Deployments and replicas
+A deployment is a YAML object that defines the pods and the number of container instances, called replicas, for each pod. You define the number of replicas you want to have running in the cluster via a ReplicaSet, which is part of the deployment object. So, for example, if a node running a pod dies, the replica set will ensure that another pod is scheduled on another available node.
+
+A DaemonSet deploys and runs a specific daemon (in a pod) on nodes you specify. They’re most often used to provide services or maintenance to pods. A daemon set, for example, is how New Relic Infrastructure gets the Infrastructure agent deployed across all nodes in a cluster.
+
+Namespaces
+Namespaces allow you to create virtual clusters on top of a physical cluster. Namespaces are intended for use in environments with many users spread across multiple teams or projects. They assign resource quotas and logically isolate cluster resources.
+
+Labels
+Labels are key/value pairs that you can assign to pods and other objects in Kubernetes. Labels allow Kubernetes operators to organize and select subset of objects. For example, when monitoring Kubernetes objects, labels let you quickly drill down to the information you’re most interested in.
+
+Stateful sets and persistent storage volumes
+StatefulSets give you the ability to assign unique IDs to pods in case you need to move pods to other nodes, maintain networking between pods, or persist data between them. Similarly, persistent storage volumes provide storage resources for a cluster to which pods can request access as they’re deployed.
+
+Other useful components
+These Kubernetes components are useful but not required for regular Kubernetes functionality:
+
+Kubernetes DNS
+Kubernetes provides this mechanism for DNS-based service discovery between pods. This DNS server works in addition to any other DNS servers you may use in your infrastructure.
+
+Cluster-level logs
+If you have a logging tool, you can integrate it with Kubernetes to extract and store application and system logs from within a cluster, written to standard output and standard error. If you want to use cluster-level logs, it’s important to note that Kubernetes does not provide native log storing; you must provide your own log storage solution.
+
+Helm: managing Kubernetes applications
+Helm is an application package management registry for Kubernetes, maintained by the CNCF. Helm “charts” are pre-configured software application resources you can download and deploy and in your Kubernetes environment. According to a 2018 CNCF survey, 68% of respondents said Helm was the preferred package management tool for Kubernetes applications. Helm charts can help DevOps teams come up to speed more quickly with managing applications in Kubernetes; it allows them leverage existing charts that they can share, version, and deploy into their dev and production environments.
+
+Kubernetes and Istio: a popular pairing
+In a microservices architecture like those that run in Kubernetes, a service mesh is an infrastructure layer that allows your service instances to communicate with one another. The service mesh also lets you configure how your service instances perform critical actions such as service discovery, load balancing, data encryption, and authentication and authorization. Istio is one such service mesh, and current thinking from tech leaders, like Google and IBM, suggests they’re increasingly becoming inseparable.
+
+The IBM Cloud team, for example, uses Istio to address the control, visibility, and security issues it has encountered while deploying Kubernetes at massive scale. More specifically, Istio helps IBM:
+
+Connect services together and control the flow of traffic
+Secure interactions between microservices with flexible authorization and authentication policies
+Provide a control point so IBM can manage services in production
+Observe what’s happening in their services, via an adapter that sends Istio data to New Relic—allowing it to monitor microservice performance data from Kubernetes alongside the application data it’s already gathering.
+Challenges to Kubernetes adoption
+Kubernetes clearly has come a long way in the first five years of life. That kind of rapid growth, though, also involves occasional growing pains. Here are a few challenges with Kubernetes adoption:
+
+1. The Kubernetes technology landscape can be confusing. One thing developers love about open-source technologies, like Kubernetes is the potential for fast-paced innovation. But sometimes too much innovation creates confusion, especially when the central Kubernetes code base moves faster than users can keep up with it. Add a plethora of platform and managed service providers, and it can be hard for new adopters to make sense of the landscape.
+
+2. Forward-thinking dev and IT teams don’t always align with business priorities. When budgets are only allocated to maintain the status quo, it can be hard for teams to get funding to experiment with Kubernetes adoption initiatives, as such experiments often absorb a significant amount of time and team resources. Additionally, enterprise IT teams are often adverse to risk and slow to change.
+
+3. Teams are still acquiring the skills required to leverage Kubernetes. It wasn’t until a few years ago that developers and IT operations folks had to readjust their practices to adopt containers—and now, they have to adopt container orchestration, as well. Enterprises hoping to adopt Kubernetes need to hire professionals who can code, as well as knowing how to manage operations and understand application architecture, storage, and data workflows.
+
+4. Kubernetes can be difficult to manage. In fact, you can read any number of Kubernetes horror stories—everything from DNS outages to “a cascading failure of distributed systems”— in the Kubernetes Failure Stories GitHub repo.
+
+New Relic can support your Kubernetes journey
+To fully understand what’s going on in your environment, you need to see into all its layers, including inside your containers. That means holistic, application-centric and infrastructure-centric monitoring. Monitoring application performance in Kubernetes is important, but you also need visibility into your Docker and Kubernetes infrastructure.
+
+New Relic’s Kubernetes cluster explorer, which is part of New Relic Infrastructure , addresses this need. It leverages an on-host integration for Kubernetes that provides deep monitoring for backend and frontend applications and for hosts running in your clusters.
+
+
+The rollout of New Relic’s Kubernetes cluster explorer was one highlight among many during a year packed with innovative upgrades to the New Relic Platform
+
+Using Kubernetes cluster explorer, teams can expect total visibility, alerting, and dashboards for all Kubernetes entities—metadata for nodes, namespaces, neployments, ReplicaSets, pods, and containers—that host your applications.
+
+This integration can be used with provider offerings as well. For example, teams using Red Hat OpenShift can link New Relic APM data with OpenShift data. This step provides deep application performance monitoring (with code instrumentation and distributed tracing) for the applications running in a cluster.
+
+After linking your applications, click any of the hexagons in the cluster explorer—each of which represents a pod in a cluster—to open a detailed view of that pod. From there, you can analyze the performance of applications running in that pod.
+
+
+Examine New Relic APM data about the applications running in your OpenShift clusters.
+
+You can even dive into New Relic distributed tracing to inspect the distributed traces captured for the application running in that pod. If you click on an individual span in a distributed trace, you can quickly see the relevant Kubernetes attributes for that application; for example you can find out which pod, cluster, and deployment an individual span belongs to.
+
+
+Get distributing tracing data from the applications running in your OpenShift cluster.
+
+Using New Relic to take advantage of the power of Kubernetes is essential for modern software companies looking to move faster with confidence. 
