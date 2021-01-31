@@ -1,0 +1,45 @@
+How I passed the CKA (Certified Kubernetes Administrator) Exam
+I’m writing this post because, ever since I published my certificate on Linkedin, I have been getting a massive number of messages from people who wanted tips for the examination. So I thought I would write up this medium article to save me the trouble of responding each and every one of them individually.
+First of all, a little bit of background on me, as my profile states, I’m a Software Architect at a company called Platformer where we build a PaaS solution on top of Kubernetes. Therefore, I work with kubernetes on a daily basis. This is important to note because the exam focuses on your ability to work with kubernetes on real world practical scenarios. So I had that covered thanks to my job role.
+As many of you may have heard, (If you haven’t heard just google the question is CKA hard?) CKA is a tough exam. Mainly because it focuses on your ability to perform on a practical level rather than just asking a bunch of MCQ questions that would test your knowledge. I will not be disclosing any exam questions here, but I will share the tips and tricks I used getting prepared and during the time of the exam.
+Getting Prepared
+First I advice you to download the exam study guide book and get a thorough understanding of what is required of you.
+I followed the CKA prep course offered by Linux Academy here to gather and fine tune my knowledge according to the requirements of the exam study guide. Please note that watching this course alone will not guarantee you getting through.
+Once you feel like you are ready to go, please go try out the following practice questions to get yourself better prepared. Note that this is targeted towards CKAD and not CKA, but still, doing these questions helped me a lot in getting prepared.
+dgkanatsios/CKAD-exercises
+A set of exercises to prepare for Certified Kubernetes Application Developer exam by Cloud Native Computing Foundation…
+github.com
+Take a look at this too.
+walidshaari/Kubernetes-Certified-Administrator
+Online resources that will help you prepare for taking the CNCF CKA "Kubernetes Certified Administrator" Certification…
+github.com
+Another important thing to do at-least more than 3 times is Kelsey Hightower’s Kubernetes the Hard way Guide which is provided below. Please make sure not to copy paste anything here and try to type everything manually and try to understand what is happening at each and every step. This will help you immensely in the exam. However don’t worry you don’t get to create a cluster from scratch. But you maybe asked to do some of the tasks kelsey has done in his guide.
+kelseyhightower/kubernetes-the-hard-way
+Bootstrap Kubernetes the hard way on Google Cloud Platform. No scripts. - kelseyhightower/kubernetes-the-hard-way
+github.com
+In addition to that, please familiarize yourself a bit on systemd here if you don’t know what it does.
+Okay that’s pretty much it on what I did for in terms of preperation for the exam. One thing to note though, I only did kelsey’s Kubernetes the hardway only one time, and that too I just copy pasted the commands without really trying to understand what’s happening behind those commands. I paid my price for that in some questions in the exam.
+UPDATE:
+Recently one of my friends sent me this article, which has 150 sample questions for CKAD. Please have a look at this too.
+https://medium.com/bb-tutorials-and-thoughts/practice-enough-with-these-questions-for-the-ckad-exam-2f42d1228552
+During the exam
+In the exam, please be fresh, drink a lot of water and make sure you have eaten well. because for the next 3 hours you will not be allowed to even drink water. Please make sure you have a stable internet connection and no interruptions.
+Useful Websites
+During the exam, you will get a browser based terminal and it will have all the tools you are required to have. You can only open one more tab and can go to any website under the domain of kubernetes.io. Here are the following links that helped me the most during the exam.
+Kubectl cheatsheet that would help you right out with most questions in your exams. https://kubernetes.io/docs/reference/kubectl/cheatsheet
+Community discussion page is also accessible to you since it comes under the kubernetes.io domain, which is a great place to search for some problems you may get. https://discuss.kubernetes.io
+Kubenertes documentation itself is great where it has the google site search functionality. You can search for anything you need and you would probably get the answer or the guidance to get the answer you need through that. https://kubernetes.io
+Kubectl it away!
+Don’t try to write your own yamls at the exam. Avoid that as much as possible and use kubectl as much as you can. There’s a lot you can do on kubectl alone.
+If you are unsure of the spec or parameters of a yaml, always use
+kubectl explain <resource>.<key>
+which is a great way to get a quick look at the keys available to you.
+Pay attention to the question context
+You will get a context change command at the beginning of every question to change the kubctl context as each question may refer a different cluster than your previous question. So always as a practice change the context before attempting a new question.
+Always exit on ssh
+When you attempt some questions, you may have to ssh into particular nodes to fix issues. When you do that, you almost certainly have to do a sudo su to get superuser access. After that when you exit, make sure you type exit twice, as the first exit may get you out of the su mode and the second exit will be the one that actually get you out of the node. It’s easy to miss an exit command, so make sure you do that after attempting a question.
+Keep your score
+In the exam, you get a notepad, where you can enter whatever you like. You can use this to save some kubectl commands for future references etc. However, another thing that I recommend you do is, once you complete a question, write down number of the question, the marks for that question and your total marks. This way, you will always know where you are with relevant to your score.
+This is handy in the final hour as you absolutely know how many questions you have attempted and how much minimum marks you need to achieve that pass mark of 74%. You don’t have to complete all the 24 questions you get to pass the exam, just target on getting that 74% and use your time to double check answers without attempting all. I did 22/24 and used the final half an hour to double check my answers before trying to attempt questions 23 and 24. And thank god i did, because some questions, I have forgotten to change context at the top and some text files that I should have saved in the base vm, I have saved in a node that I have ssh’d into and have forgotten to exit properly.
+Take it easy and All the very best!
+Don’t stress out much on the exam. True, it’s hard. Don’t panic. I panicked at the last minute before starting the exam and tried to reschedule for a later date thinking I was not ready. However it was too late and I just took a deep breath and thought, what the hell, I’ll just go for it and I did. Don’t be scared as you get a free retry on the exam. Thankfully, I passed on the first attempt itself.
