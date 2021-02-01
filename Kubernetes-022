@@ -1,0 +1,85 @@
+The 10 best new features in Scikit-Learn 0.24 
+Scikit-learn version 0.24.0 is packed with new features for machine learning. It arrived just in time for the New Year. Let’s look at the highlights! ☃️
+space shuttle flying
+Source: pixabay.com
+1. Faster ways to select hyper-parameters
+HalvingGridSearchCV and HalvingRandomSearchCV join GridSearchCV and RandomizedSearchCV as less resource-intense members of the hyper-parameter tuning family.
+The new classes choose the best hyper-parameters using a tournament approach.
+jousting
+A tournament. Source: pixabay.com
+They train a combination of hyper-parameters on a subset of observations. The hyper-parameter combinations that score best advance to the next round where they get scored on a larger number of observations. The game continues until the final round is reached.
+DetermiHalvingGridSearchCVHalvingRandomSearchCV
+HalvingGridSearchCV uses all hyper-parameter combinations. RandomGridSearchCV uses a random subset, like RandomizedSearchCV does.
+Advice
+Use GridSearchCV when you don’t have too many hyper-parameters to tune and your pipeline won’t take a long time to run.
+For larger search spaces and slow-training models use HalvingGridSearchCV.
+For really large search spaces with slow-training models use HalvingRandomSearchCV.
+I don’t know that I see a use case for RandomizedSearchCV anymore. Do you? If so, let me know on Twitter at discdiver or in the comments.
+HalvingGridSearchCV might be the “just right” Goldilocks solution for many cases.
+3 bears
+3 bears. Source: pixabay.com
+These classes must be imported from the experimental module before using.
+from sklearn.experimental import enable_halving_search_cv
+from sklearn.model_selection import HalvingRandomSearchCV 
+from sklearn.model_selection import HalvingGridSearchCV
+It’s kind of confusing that the classes are named RandomizedSearchCV and HalvingRandomSearchCV. It would be nice if the Random and Randomized terms were consistent. Experimental API’s are subject to change without warning, so maybe this one will. 😀
+2. ICE plots
+Scikit-learn version 0.23 introduced partial dependence plots (PDPs) which are great for showing average feature importances. Version 0.24 brings the option to show individual conditional expectation (ICE) plots.
+ice cubes
+ICE, ICE Source: pixabay.com
+Like a PDP, an ICE plot shows the dependence between the target and an input feature. The difference is that a an ICE plot shows the dependence of the prediction on a feature for each sample — with one line per sample. The average of the ICE plots for a feature is the PDP.
+See ICE plots by passing the plot_partial_dependence function the keyword argument kind='individual'. To see partial dependence plots and ice plots pass kind='both'.
+Image for post
+PDP & ICE plots from the scikit-learn gapminder dataset. Note that continent should print as a bar chart.
+The plot_partial_dependence is a bit tricky to use as of this writing. The scikit-learn team is working on inferring feature names from DataFrames, support for categorical columns by making a bar plot, and the ability to handle a pipeline with a column transformer that encodes categorical features. ICE plots cannot yet be centered, but the pull request to change that is open. Finally, a parameter to easily change the color of the PDP curve with ice plots is under discussion. Improvements are in the works! 🎉
+To learn more about ICE plots and other interpretable machine learning techniques check out the excellent ebook Interpretable Machine Learning by Christoph Molnar. 🚀
+3. Histogram boosting improvements
+space shuttle with boosters launch
+Boost it! Source: pixabay.com
+The LightGBM inspired HistGradientBoostingRegressor and HistGradientBoostingClassifier now have a categorical_features parameter that provides support for categorical features. Because histogram-based boosters bin continuous features, this is a nice option. It saves training time compared to one-hot encoding and performs better than other encoding options. See a comparison in the docs.
+These models still need the input features to be numeric. If you have categorical features that aren’t in a numeric dtype, you can use OrdinalEncoder to encode them as numbers. Then tell the booster which features are categorical by passing a boolean mask or an array of integers. For example:
+model = HistGradientBoostingRegressor(
+   categorical_features=[True, False]
+)
+The histogram boosting algorithms received speed and memory-usage improvements in version 0.24. The benchmark fit speed for HistGradientBoostingClassifier decreased by nearly 75% in late 2020!
+Also, note that the histogram-based estimators support missing values — so no need to impute if you don’t want to. 😀
+These estimators are still experimental, so enabling requires importing them from sklearn.experimental. ☝️
+4. Forward selection for feature selection
+When selecting a subset of features, SequentialFeatureSelector starts with no features and adds the most valuable feature first, and then the second most valuable feature, and so on until it reaches the stopping point you’ve chosen. This is known as forward selection.
+SequentialFeatureSelector doesn’t require the underlying model it uses to expose a coef_ or feature_importances_ attribute, unlike feature selection transformersRFE and SelectFromModel. However, SequentialFeatureSelector may be slower than those two options, because it evaluates models with cross-validation.
+5. Fast approximation of polynomial feature expansion
+The PolynomialFeatures transformer creates interaction terms and higher order polynomials of your features. However, it can make model training painfully slow.
+The new PolynomialCountSketch kernel approximation function from the kernel_approximation namespace provides a faster way to train a linear model with predictive benefits that can approximate using PolynomialFeatures. Alternatively, you can view using PolynomialCountSketch as a faster version of a support vector machine with a radial basis function kernel, just with less predictive performance. Dig deeper in the docs.
+sketch
+Sketch Source:pixabay.com
+PolynomialFeatures returns squared features and interaction terms (and higher order polynomials if requested). In contrast, PolynomialCountSketch returns the number of features you specify in the n_components parameter. The default is 100 and approximately 10x the number of original features is recommended in the docstring. These features represent the polynomial feature expansion approximation and are not directly interpretable.
+Bottom line: if you have lots of observations, PolynomialCountSketch can save you lots of training time relative to PolynomialFeatures, but at the expense of interpretability and perhaps a little predictive power. ☝️
+6. SelfTrainingClassifier for semi-supervised learning
+The SelfTrainingClassifier is a new meta-classifier for semi-supervised learning. It allows any supervised classifier that can predict the probabilities of a sample belonging to a target class to act as a semi-supervised classifier that can learn from unlabeled observations.
+“Unlabeled data, when used in conjunction with a small amount of labeled data, can produce considerable improvement in learning accuracy.” — Wikipedia
+Note that unlabeled values in y_train must have a value of -1. A null value doesn’t cut it. ☝️
+7. Mean absolute percentage error (MAPE)
+The mean_absolute_percentage_error function has been added as a regression problem scoring metric. The MAPE is nice because, like R-squared, it provides some comparative value across different regression problems.
+ape
+Ape, not MAPE Source:pixabay.com
+You could have calculated MAPE by hand with np.mean(np.abs((y_test — preds)/y_test)), but it’s nice to have the convenience function available. 🙂
+8. OneHotEncoder supports missing values
+The scikit-learn implementation of OneHotEncoder can now handle missing values. It treats them as a category unto themselves. If there is a null value in X_train then there will be a column for missing values in the transformed columns. 🎉
+lava from volcanoes
+Hot Source: pixabay.com
+9. OrdinalEncoder can handle new values in the test set
+Do you have categories in your testing set that didn’t exist in your training set? If so, use the handle_unknown='use_encoded_value' keyword argument with the new unknown_value parameter. You can set the unknown_value parameter to be either an integer that didn’t appear in the ordinal encoded values or np.nan. This makes OrdinalEncoder much more usable! 🚀
+10. Recursive feature elimination (RFE) accepts a proportion of features to retain
+Pass a float between 0 and 1 to n_features_to_select to control the percentage of features to select. This addition makes it easier to programmatically eliminate some proportion of features.
+Bonus: Doc improvements
+This scikit-learn update includes a lot of great new documentation, including handy user guides. 👍
+For the details on all these changes and more, see the changelog.
+Upgrading
+How do you get all this good stuff? 🤔
+To upgrade, if you have the pypi version of scikit-learn installed in your virtual environment do a pip install -U scikit-learn.
+Otherwise, if you are using conda and currently have the conda-forge version installed use conda install -c conda-forge scikit-learn.
+As of this writing, the default conda channel has version 0.23.2, so I suggest not using that. You might want to uninstall the version from the conda channel, if you have it.
+Alternatively, you could create a new conda environment (see my guide here) or create some other virtual environment.
+Wrap
+Scikit-learn is an indispensable tool for data science practitioners who use Python. A huge thank you to all the folks who maintain and contribute to it!
+The next scheduled scikit-learn release is 1.0! 🎉 Follow me to make sure you don’t miss the low-down.
