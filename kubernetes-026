@@ -1,0 +1,67 @@
+Why Kubernetes is Abbreviated k8s
+Some times people will join the Kubernetes community and get confused on what the “k8s” is all about. So I just wanted to share a little bit of history around numeronyms.
+In the 80s computer companies were having new challenges sharing their software around the world. They often would use the words “internationalization” and “localization” to describe the process of translating the software. Developers are lazy and somewhere in the mid-late 80s they started abbreviating the words based on their first letter, last letter, and number of letters in between. This is why you’ll sometimes see i18n for internationalization and l10n for localization. There are also new numeronyms such as Andreessen Horowitz (a16z) and of course our favorite kubernetes (k8s).
+Hopefully that will help give a little bit of background about the name.
+WRITTEN BY
+
+Justin Garrison
+Trying new things. Breaking stuff. Likes open source.
+Follow
+2K
+
+16
+
+2K 
+
+16
+
+
+
+More from Justin Garrison
+Follow
+Trying new things. Breaking stuff. Likes open source.
+Dec 17, 2016
+Nest Cam Outdoor vs. Ring Stick Up Cam
+The outdoor security camera market didn’t exist much before this year. Then startups realized it was a ripe market for disruption, the old options were terrible, and cameras got smart with motion detection and other features some people never asked for.
+Let me start by just saying my requirements for an outdoor camera may not be your requirements. My basic requirements
+Good night vision support
+Wide field of view
+Smart alerting (I don’t want alerts if I can help it)
+The long term recordings, 2-way communication, and some other features I don’t need.
+Ring Stick Up Cam
+After a lot of research I tried the ring first because it looked like a really good option and covered my needs. It also had a rechargeable battery with optional micro-USB power and even had an optional solar panel. …
+Read more · 5 min read
+34
+
+9
+
+
+Nov 8, 2016
+Google OnHub Feature Requests
+Large scale DDoS are not rare occasions anymore. What we need to help protect the Internet is to make home routers smarter. I hope Google can start this trend and maybe it would catch on as standard features.
+Here are some feature that (to me) seem reasonable for any modern router to provide.
+Don’t allow source IP spoofing (egress filtering)
+Notify me for large amounts of outbound traffic
+Blacklist known C&C IPs and malicious sites
+Egress filtering should be a no-brainer. If my local subnet is 192.168.0.1 don’t allow traffic to leave my network pretending to come from any other subnet not local to my network. …
+Read more · 2 min read
+1
+
+
+
+Oct 19, 2016
+Space Computing 🚀 and Orbit Native Applications
+Image for post
+Forgive the analogies, I read Breaking the Chains of Gravity: The Story of Spaceflight before NASA and despite a few slow parts, it was a really enlightening read. I couldn’t help but see some similarities with early spaceflight and computing.
+In the early days, flight was about experimentation and lots of smart (and daring) individuals. The early planes were crude and inefficient but they worked and that’s all that mattered. This is also true for almost all early computers, software, and systems administrators. Hindsight is easy to explain how crude something was when we see how “great” things are now.
+Read more · 6 min read
+
+
+
+Sep 27, 2016
+No SDN Kubernetes
+Kubernetes networking has a few requirements. They are:
+Pods are routable on a flat network
+Pods should see their own routable IP address
+Nodes can communicate with all containers
+How these requirements are implemented is up to the operator. In many cases this means using a software defined network “SDN” also called an overlay network (e.g. flannel, weave, calico) or underlay network (MACvlan, IPvlan). The SDNs all accomplish the same three goals but usually with different implementation and often unique features.
