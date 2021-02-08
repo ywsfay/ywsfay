@@ -1,0 +1,35 @@
+How to set up a serious Kubernetes terminal
+Kubernetes comes pre-packaged with an outstanding CLI. For basic operations, it works wonderfully. Alas, when one needs to do something quickly, complexity increases.
+The Kubernetes community has built all sorts of web based tooling for monitoring your cluster — kube ops view, grafana etc. However, having a fully kitted terminal will rapidly speed up the time it takes to get to the root of an issue. It forms a fundamental part of your Swiss army knife.
+The following is a very short list of open source tools that I’ve applied to my OSX terminal. When used together, they allow me to skip around my kubernetes cluster, quickly troubleshoot issues, and monitor behaviour. I’ve cut out lots of small little utilities and stuck to the tools that I find myself using every day.
+Before any tools…
+Before you go after these tools, I’d strongly recommend installing zsh. It is an outstanding, open source wrapper around the standard OSX terminal. It is more feature rich and intuitive and the plugins you can install are fantastic. Some of these tools listed make the assumption you have ZSH installed.
+k9s
+Image for post
+oh yes
+I’m starting strong. K9s is the momma bear of CLI tools for kubernetes cluster. You can SSH straight into pods with a single key press, view logs, delete resources and more. It provides outstanding access for the most common operations you’ll be performing. This is a staple for any engineer using kubernetes.
+kubectx
+It is very rare that we’ll only have one single cluster. Switching between these is as simple as
+kubectl config use-context my-context
+But with this, there are some prerequisites:
+You need to know the name of the cluster before you run.
+There is another, similar set-context command that could trip you up.
+kubectx presents a simpler alternative to this. If you run kubectx on its own, it will list out all of the contexts in your .kube/config file. You can then provide the name of the context you’re interested in:
+kubectx my-context
+No need to remember all the contexts, no need to manually check files and no possibility of getting the wrong command. Nice and simple. Combined with k9s, this offers a lot of navigability from your CLI with minimal key presses.
+Edit: I originally stated that k9s could not support switching between contexts. A brilliant response from Fernand Galiana pointed out that with the :ctx command, this is possible.
+kubens
+Once you’re flitting around contexts, you may want to dig into a specific namespace. Once again, it’s very common to have more than a few namespaces in your cluster. Well, ahmetb (the gentleman who brought you kubectx) also put together kubens. It’s the same as kubectx, only for namespaces.
+kubens kube-system
+Now all of your commands run against the kube-system namespace, by default. You can also run kubens without anything else to see a list of your namespaces.
+kube-ps1
+So, you can switch between contexts and namespaces. But how do you know which one you’re currently aimed at? It’s a pain to keep checking. At the moment, to find out you’d need to run:
+kubens
+kubectx
+kubectl <my-command>
+To remove this, ps1 is a zsh plugin that will automatically show you your current context and namespace:
+Image for post
+I’m pointing at my minikube context and the default namespace
+Now you can see which namespace and context you’re pointing out without running a single command. It’s also highly configurable too — you can turn off namespace or context, if you’re only interested in one of them, or you can use kubeoff to disable the whole thing entirely.
+popeye
+Now, onto something a little different. popeye will run automatic scans of the resources in your repository and highlight clear, obvious problems. This is a very new tool and one that I have found very useful. If you’re looking for some spring cleaning to do in your cluster, starting with popeye will give you some clear indications of what needs to be fixed.
