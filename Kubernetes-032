@@ -1,0 +1,88 @@
+Benchmark results of Kubernetes network plugins (CNI) over 10Gbit/s network
+New Version available : 2020
+This article is a bit old now, it has been updated. Check it out !
+https://itnext.io/benchmark-results-of-kubernetes-network-plugins-cni-over-10gbit-s-network-updated-august-2020-6e1b757b9e49
+Kubernetes is a great orchestator for containers. But it does not manage network for Pod-to-Pod communication. This is the mission of Container Network Interfaces (CNI) plugins which are a standardized way to achieve network abstraction for container clustering tools (Kubernetes, Mesos, OpenShift, etc.)
+But here is the point : what are the differences between those CNIs ? Which one has the best performance ? Which one is the leanest ?
+This article is showing the results of a benchmark I’ve conducted on 10Gbit/s network. These results were also presented during a conference at the Devops D-DAY 2018 in Marseille (France) on November 15, 2018.
+Benchmark context
+The benchmark is conducted on three Supermicro bare-metal servers connected through a Supermicro 10Gbit switch. The servers are directly connected to the switch via DAC SFP+ passive cables, and are setup in the same VLAN with jumbo frames activated (MTU 9000).
+Kubernetes 1.12.2 is setup on Ubuntu 18.04 LTS, running Docker 17.12 (default docker version on this release).
+To improve reproducibility, we have chosen to always setup the master on the first node, to host the server part of the benchmark on the second server, and the client part on the third one. This is achieved via NodeSelector in Kubernetes deployments.
+Here is the scale we will be using to describe benchmark results and interpretation:
+Image for post
+Scale for results' interpretation
+Selection of CNIs for the benchmark
+This benchmark only focuses on the CNI list integrated in the “bootstrap a cluster with kubeadm” part of the documentation. Among the 8 mentioned CNIs, we will not test “JuniperContrail/TungstenFabric” CNI, because it requires a 3.10 kernel (ubuntu 18.04 is running a 4.15 kernel).
+Here is the list of CNIs we will compare :
+Calico v3.3
+Canal v3.3 (which is in fact Flannel for network + Calico for firewalling)
+Cilium 1.3.0
+Flannel 0.10.0
+Kube-router 0.2.1
+Romana 2.0.2
+WeaveNet 2.4.1
+Installation
+The easiest a CNI is to set up, the best our first impression would be. Even if all CNIs are described as very easy to set up, following the documentation wasn’t enough to install Cilium and Romana. Cilium needs an ETCD datastore to be functionnal, and we had to search the minikube section of their documentation to find a one-line deployment method. Romana is cruelly lacking of mainteance, and thus doesn’t handle the recent changes introduced by Kubernetes 1.11 on Toleration applied on “unready” nodes (before CNI setup). As a consequence, Romana doesn’t deploy and leaves your nodes “not-ready” for a looooong time ! This requires to fix all Tolerations of deployments/daemonsets present in Romana setup Yaml file.
+As we said earlier, both server and switch are configured with Jumbo frames activated (by setting the MTU to 9000). We would really appreciate that a CNI could auto-discover the MTU to use, depending on the adapters. In fact, Cilium, Flannel and Romana are the only one to correctly auto-detect MTU. Most other CNIs have issues raised in github to enable MTU auto-detection, but for now, we need to fix it manually by modifying a ConfigMap for Calico, Canal and Kube-router, or via ENV var for WeaveNet.
+Maybe you are wondering what is the impact of an incorrect MTU ? Here is a chart showing the difference between WeaveNet with default MTU vs WeaveNet with Jumbo frames :
+Image for post
+Impact of MTU setting on bandwidth performances
+Here is a summary of the setup results :
+Image for post
+Summary of setup benchmark result
+Security
+When comparing security of these CNIs, we are talking about two things : their ability to encrypt communications, and their implementation of Kubernetes Network Policies (according to real tests, not from their documentation).
+The only CNI of the panel that can encrypt communications is WeaveNet. This is done with setting an encryption password as an ENV variable of the CNI, which is quite easy to do.
+When it comes to the Network Policy implementation, Calico, Canal and Cilium are the best of the panel, by implementing both Ingress and Egress rules. Kube-router and WeaveNet are actually implementing only Ingress rules. Flannel and Romana do not implement Network Policies. (Nota bene : Romana´s documentation refers to network policies implementation, but this is achieved with custom Romana resources and not Kubernetes Network Policies)
+Here is the summary of the results :
+Image for post
+Summary of security benchmark result
+Performance
+This benchmark shows the average bandwidth of three runs (at least) of each test. We are testing TCP and UDP performance (using iperf3), real applications like HTTP (using nginx and curl), or FTP (using vsftpd and curl), and finally the behavior of application encryption with SCP protocol (using OpenSSH server and client).
+For all tests, we also run the benchmark on the bare-metal nodes (green bar) to compare the effectiveness of the CNI vs native network performance. To maintain consistency with our benchmark scale, we use the following colors on the charts :
+Yellow = Very good
+Orange = Good
+Blue = Fair
+Red = Poor
+Here are the results :
+Image for post
+TCP performance
+We can see on TCP results that all CNIs are very good, except WeaveNet encrypted, due to the encryption process that slows down performance drastically.
+Image for post
+UDP performance
+In the UDP benchmark, WeaveNet encrypted gets even worse results than in TCP (about 1/3 factor). WeaveNet without encryption is just a bit under others but still reasonnable (97% of bare-metal performance). We can notice Kube-router and Romana are a bit faster (less than 1%) than bare-metal : tests have been re-run multiple times and results are stable.
+Image for post
+HTTP performance
+Even if HTTP is a TCP based protocol, real life application seems to have an impact on performance. The test is basically a file of 10GB random bytes (to avoid possible compression side-effect), served by nginx, and downloaded from a curl client. WeaveNet Encrypted is now running at 17% of TCP performance, and Cilium seems to handle this test with some problems too. WeaveNet without encryption, Flannel and Canal are also a bit behind others CNIs.
+Image for post
+FTP performance
+With FTP test, the results are quite similar to HTTP, except that WeaveNet unencrypted is acting like Cilium, and both are behind others CNIs. WeaveNet encrypted is as usual, very low in performance. This test is the same scenario as HTTP except that we replace nginx with VSFTPD in anonymous mode.
+Image for post
+SCP performance
+With SCP, we transfer the 10GB random file over scp using OpenSSH server and client. We can clearly see that even bare-metal performance are much lower than previously. All CNIs are quite equal, except WeaveNet Encrypted which is suffering from double encryption (SCP + network encryption).
+Here is a summary of CNIs performances :
+Image for post
+Summary of performances benchmark results
+Resource consumption
+Let’s now compare how these CNIs handle resource consumption while under heavy load (during TCP 10Gbit transfer). In performance tests, we compare CNIs to bare metal (green bar). For resources consumption tests, we also show the consumption of a fresh Kubernetes at idle (purple bar) without any CNI setup. We can then figure out how much a CNI really consumes.
+Let’s begin with the memory aspect. Here is the average nodes RAM usage (without buffers/cache) in MB during transfer.
+Image for post
+average nodes RAM usage (without buffers/cache)
+We can clearly see that Flannel is the leanest, only 20MB more memory than a Kubernetes with no CNI. Calico, Canal, Kube-router and Romana are close to Flannel, and a bit behind we have WeaveNet, which shows that encryption has no effect on memory consumption. Cilium consume a lot more memory than others.
+Now, let’s see the CPU consumption. Warning: Graph unit is not percent but permil. So 1 permil for bare metal is 0.1% in fact. Here are the results :
+Image for post
+Average CPU usage in permil (not percent)
+Calico and Flannel consume less than 1% CPU more than kubernetes node without CNI to achieve a 10Gbit TCP transfer, which is very good. Kube-router and Romana are a bit behind with 1.5%. WeaveNet uncrypted and Canal are both pretty high with 3% overhead, but not as much as WeaveNet encrypted and Cilium, with more than 4% for each of them. For WeaveNet encrypted, this is quite logical, because the full 10Gbit stream is encrypted, and thus uses CPU to achieve this. However, Cilium is not in that case and consumes even more than the encrypted CNI.
+Here is the summary of resource consumption part :
+Image for post
+Resource consumption summary
+Summary
+Here is an overview of all aggregated results :
+Image for post
+Quick summary of all results
+Conclusion
+That final part is subjective and conveys my own interpretation of the results. I suggest using the following CNIs if you are in a corresponding scenario :
+You have low resource nodes in your cluster (only few GB of RAM, few cores) and you don’t need security features, go with Flannel. It is the leanest CNI we tested. Moreover, it is compatible with a lot of architectures (amd64, arm, etc.).
+You need to encrypt your network for security reasons, go with WeaveNet. Don’t forget to set your MTU size if you are using jumbo frames and activate encryption by giving a password in an environment variable. But then again, forget about performance, this is the price for encryption.
+For every other common usage, I would recommend Calico. Just like WeaveNet, don’t forget to set the MTU in the ConfigMap if you are using jumbo frames. It has proven to be multipurpose and efficient in terms of resources consumption, performance and security. Calico already works on very large clusters and has very interesting BGP features.
