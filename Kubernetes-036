@@ -1,0 +1,193 @@
+Kubernetes Ingress
+A lot of people seem confused about how Ingress works in Kubernetes and questions come up almost daily in Slack. It’s not their fault, either — unfortunately the Kubernetes documentation is pretty weak in this area. Updating the documentation itself is probably a better use of time than writing this, I just prefer this …medium. I’ll try to do both, though!
+What is Ingress?
+It’s probably worth a quick introduction to clear things up. Traditionally, you would create a LoadBalancer service for each public system you want to expose. This can get rather expensive. Ingress gives you a way to route requests to services based on the request host or path, centralizing a number of services into a single entrypoint.
+Ingress Resources
+Ingress is split up into two main pieces. The first is an Ingress resource, which defines how you want requests routed to the backing services.
+For example, a definition that defines an Ingress to handle requests for www.mysite.com and forums.mysite.com and routes them to the Kubernetes services named website and forums respectively would look like:
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: my-ingress
+spec:
+  rules:
+  - host: www.mysite.com
+    http:
+      paths:
+      - backend:
+          serviceName: website
+          servicePort: 80
+  - host: forums.mysite.com
+    http:
+      paths:
+      - path:
+        backend:
+          serviceName: forums
+          servicePort: 80
+The documentation on the Ingress resource itself really isn’t bad. You can find official examples here.
+Here is where things seem to get confusing, though. Ingress on it’s own does not really do anything. You need something to listen to the Kubernetes API for Ingress resources and then handle requests that match them. This is where the second piece to the puzzle comes in — the Ingress Controller.
+Ingress Controllers can technically be any system capable of reverse proxying, but the most common is Nginx. A full example Nginx Ingress Controller (and LoadBalancer service) is as follows. Please note that if you are not on a provider that supports LoadBalancer services (ie. bare-metal), you can create a NodePort Service instead and point to your nodes with an alternative solution that fills that role — a reverse proxy capable of routing requests to the exposed NodePort for the Ingress Controller on each of your nodes.
+kind: Service
+apiVersion: v1
+metadata:
+  name: ingress-nginx
+spec:
+  type: LoadBalancer
+  selector:
+    app: ingress-nginx
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+  - name: https
+    port: 443
+    targetPort: https
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: ingress-nginx
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: ingress-nginx
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - image: gcr.io/google_containers/nginx-ingress-controller:0.8.3
+        name: ingress-nginx
+        imagePullPolicy: Always
+        ports:
+          - name: http
+            containerPort: 80
+            protocol: TCP
+          - name: https
+            containerPort: 443
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 10254
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        args:
+        - /nginx-ingress-controller
+        - --default-backend-service=$(POD_NAMESPACE)/nginx-default-backend
+This is essentially an Nginx image that monitors Ingress resources for requested routes to serve. One callout you may have noticed is that it specifies a --default-backend-service as a startup argument, passing in nginx-default-backend. This is wanting a service that can simply handle returning a 404 response for requests that the Ingress Controller is unable to match to an Ingress rule. Let’s create that as well with the specified name.
+kind: Service
+apiVersion: v1
+metadata:
+  name: nginx-default-backend
+spec:
+  ports:
+  - port: 80
+    targetPort: http
+  selector:
+    app: nginx-default-backend
+---
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: nginx-default-backend
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx-default-backend
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: default-http-backend
+        image: gcr.io/google_containers/defaultbackend:1.0
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 10m
+            memory: 20Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+I said Ingress is made up of two main components and we introduced three new things. This is because the default backend isn’t really a piece of Ingress itself, but rather is something that the Nginx Ingress Controller requires. Other Ingress Controllers won’t necessarily have this component.
+Wiring it Up
+Assuming you’ve created the Ingress Controller above with the dependent default backend, your Ingress resources should be handled by the LoadBalancer created with the Ingress Controller service. Of course, you would need services named website and forums to route to in the above example.
+As a quick test, you can deploy the following instead.
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: demo-ingress
+spec:
+  rules:
+  - host: mysite.com
+    http:
+      paths:
+      - backend:
+          serviceName: nginx
+          servicePort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: nginx
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: echoserver
+        image: nginx
+        ports:
+        - containerPort: 80
+To test things out, you need to get your Ingress Controller entrypoint.
+For LoadBalancer services that will be:
+kubectl get service ingress-nginx -owide
+For NodePort services, you can find the exposed port with:
+kubectl describe service ingress-nginx
+You should then be able to test the Ingress Controller entrypoint to get the a 404 response from the default backend:
+LoadBalancer: curl [ELB_DNS]
+NodePort: curl [NODE_IP]:[NODE_PORT]
+If you match the Ingress rules, you will receive a default Nginx response:
+LoadBalancer: curl -H 'Host:mysite.com' [ELB_DNS]
+NodePort: curl -H 'Host:mysite.com' [NODE_IP]:[NODE_PORT]
+Wrap Up
+Hopefully this sheds a little light on the confusing Ingress resources. Once you have the Ingress Controller set up and respecting Ingress requests, I highly recommend going back to the Ingress documentation with a fresh understanding to learn different ways to route requests. There is also a rather complete example of Ingress in the Kops repository.
+As an alternative to Nginx (and the default backend!) you can look at systems like Traefik, which has native support for Ingress. For a writeup on how to integrate this properly with Kubernetes, I highly recommend reading 
+Patrick Easters
+ article Using Traefik with TLS on Kubernetes. It’s an excellent writeup that follows Kubernetes best-practices.
+Another option to solve this problem is to use a system like Kong. While Kong does not support Kubernetes Ingress, it solves the same problem — you deploy it as a LoadBalancer service and register mappings to services with it. Only instead of using Ingress, you use the Kong API.
