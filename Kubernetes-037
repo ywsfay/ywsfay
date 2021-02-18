@@ -1,0 +1,113 @@
+Kubernetes & Traefik 101— When Simplicity Matters
+Have you ever been in a situation that started with …
+Someone at work: “Look, it’s super simple, let me explain how it works …”
+… that continued with …
+[ … agony of arcane jargon …]
+Same enthusiastic colleague: “See, did you get it?”
+You (poker face): “Sure, gotcha, aha, no problem, whoo, super simple indeed, aha … ”
+… but that ended up with you sneaking into the bathroom to babble chunks of keywords you barely remember.
+“Ok Google, what is a cluster of Ingress in a cube of nodes? … Please please please help me.”
+Nope. Hasn’t happened to me. Not even once. No Sir!
+But let’s pretend that it did happen (hypothetically) several years ago, and that all the articles I stumbled upon during my research were made of such cryptic symbols that tears started to come out of my eyes (and they weren’t tears of joy).
+I said: Let’s pretend.
+So based on t
+You can skip this part if you’re familiar with Kubernetes.
+What You Need to Know about Kubernetes
+Kubernetes, as in Cluster
+Kubernetes is a cluster technology. It means that you will see a cluster of computers as one entity. You will not deploy an application on a specific computer, but somewhere in the cluster, and it’s Kubernetes’s job to determine the computer that best matches the requirements of your application.
+Image for post
+Machines in the cluster can have different characteristics
+Nodes
+Each computer in the cluster is called a node. Eventually, the nodes will host your applications. The nodes can be spread throughout the world in different data centers, and it’s Kubernetes’s job to make them communicate as if they were neighbors.
+Image for post
+Nodes are machines in the cluster
+Containers
+I guess that you are already familiar with containers. Just in case you’re not, they used to be the next step of virtualization, and today they are just that: the de-facto standard for virtualization. Instead of configuring a machine to host your application, you have your application wrapped into a container (along with everything your application needs — OS, libraries, dependencies, …) and deployed on a machine that hosts the container engine which is in charge of actually running the containers.
+Containers technically don’t belong to Kubernetes; they’re just one of the tools of the trade.
+Image for post
+Container embed the required technologies
+Basically, Kubernetes sees containers like in the following diagram:
+Image for post
+The container engine is responsible for handling the underlying technologies needed in your containers
+Pods
+Because Kubernetes loves layers, Kubernetes adds the notion of Pods around your containers. Pods are the smallest unit you will eventually deploy to the cluster. A single Pod can hold multiple containers, but for the sake of simplicity let’s say for now that a single Pod will host a single container.
+So, in a Kubernetes world, a Pod is the new name for an instance of your application, an instance of your service. Pods will be hosted on the Nodes, and it’s Kubernetes’s job to determine which Node will host which Pod.
+Image for post
+If a Pod consists of multiple containers, they will share the same resources / network
+Deployments
+Here comes the fun part! Deployments are requirements you give to Kubernetes regarding your applications (your Pods). Basically, with deployments you tell Kubernetes:
+Hey Kube, always keep 5 instances (or replicas) of these Pods running — always.
+It’s Kubernetes’s job to ensure that your cluster will host 5 replicas of your Pods at any given time.
+Image for post
+Kubernetes is responsible for deploying the pods to the right places
+Services
+Oh, yet another fun concept …
+Pods’ lifecycle are erratic; they come and go by Kubernetes’ will.
+Not healthy? Killed.
+Not in the right place? Cloned, and killed.
+(No, you definitely don’t want to be ruled by Kube!)
+So how can you send a request to your application if you can’t know for sure where it lives? The answer lies in services.
+Services define sets of your deployed Pods, so you can send a request to “whichever available Pod of your application type.”
+Image for post
+When requesting your application, you don’t care about its location or about which pod answers the request
+Ingress
+So we have Pods in our cluster.
+We have Services so we can talk to them from within our cluster. (Technically, there are ways to make services available from the outside, but we’ll purposefully skip that part for now.)
+Now, we’d like to expose our Services to the internet so customers can access our products.
+Ingress objects are the rules that define the routes that should exist.
+Image for post
+Ingress objects are the rules that define the routes to our services
+Ingress Controller
+Now that you have defined the rules to access your services from the outside, all you need is a component that routes the incoming requests according to the rules … and these components are called Ingress Controllers!
+And since this is the topic of this article — Traefik is a great Ingress Controller for Kubernetes.
+Image for post
+What You Need to Know about Traefik
+It rocks.
+It’s easy to use.
+It’s production ready and used by big companies.
+It works with every major cluster technology that exists.
+It’s open source.
+It’s super popular; more than 150M downloads at the time of writing.
+… oh? Is my opinion biased? Well, maybe … but all of the above is true!
+Let’s Start Putting Everything Together!
+This is the part where we actually start to deploy services into a Kube cluster and configure Traefik as an Ingress Controller.
+Prerequisite
+You have access to a Kubernetes cluster, and you have kubectl that points to that cluster.
+Just so you know, here I’m using Kubernetes embedded in Docker for Mac.
+What We’ll Do
+We’ll use a pre-made container — containous/whoami — capable of telling you where it is hosted and what it receives when you call it. (Sorry to disappoint you, but I can confirm we won’t build the new killer app here^^)
+We’ll define two different Pods, a whoami and a whoareyou that will use this container.
+We’ll create a deployment to ask Kubernetes to deploy 1 replica of whoami and 2 replicas of whoareyou (because we care more about others than we care about ourselves … how considerate!).
+We’ll define two services, one for each of our Pods.
+We’ll define Ingress objects to define the routes to our services.
+We’ll set up Traefik as our Ingress Controller.
+And because we love diagrams, here is the picture:
+Image for post
+Setting Up Traefik Using Helm
+Helm is a package manager for Kube and, for me, the most convenient way to configure Traefik without messing it up. (If you haven’t installed Helm yet, doing so is quite easy and fits in two command lines, e.g. brew install kubernetes-helm, and helm init.)
+Image for post
+To set up Traefik, copy / paste the following command line:
+helm install stable/traefik --set dashboard.enabled=true,dashboard.domain=dashboard.localhost
+In the above command line, we enabled the dashboard (dashboard.enabled=true) and made it available on http://dashboard.localhost (dashboard.domain=localhost.domain).
+The output of the helm install command line will look like:
+Image for post
+In my case, EXTERNAL-IP is already available and is localhost.
+EXTERNAL-IP is the address of the door to my cluster; it is the public address of the Ingress Controller (Traefik).
+And as we said before, we should be able to access the dashboard right away!
+Image for post
+The dashboard shows that Traefik has detected a service (called dashboard.localhost, on the right) and has created a route to it (host:dashboard.localhost, on the left)
+Let’s Deploy Some Pods!
+Now it’s time to deploy our first WhoAmI!
+As a reminder, we want one Pod with one container (containous/whoami).
+Image for post
+Quite a straightforward Pod
+Kubernetes uses yaml files to describe its objects, so we will describe our deployment using one.
+
+To provide some explanations about the file content:
+We define a “deployment” (kind: Deployment)
+The name of the object is “whoami-deployment” (name: whoami-deployment)
+We want one replica (replicas: 1)
+It will deploy pods that have the label app:whoami (selector: matchLabels: app:whoami)
+Then we define the pods (template: …)
+The Pods will have the whoami label (metadata:labels:app:whoami)
+The Pods will host a container using the image containous/whoami (image:containous/whoami)
