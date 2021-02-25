@@ -1,0 +1,102 @@
+Get THREE times the capacity for your Kubernetes Cluster for FREE! Too good to be true?
+A few months ago, I read a conversation on Hacker News. One poster postulated that you could run multiple nodes in a Google Kubernetes Engine cluster for the same price as one if you used Preemptible VMs.
+Doing the math, you can get 3 times the capacity for a lower price, and because Kubernetes takes care of rescheduling pods, you don’t have to worry about instances being preempted. Sounds amazing right?
+From my personal experience and speaking with multiple advanced GKE users, it seemed like this method to save costs definitely works. I actually met a large GKE customer (500+ nodes) who runs all their stateless production workloads on 100% PVMs. They have reported no problems and are super happy with the cost savings.
+So is everything is good to go? Well, the next comment attacked the idea and said “Your message obviously implies that you have no experience with what you are suggesting, hence why you don’t realize the downsides.”
+Wow, so harsh! Was this person right? Is it totally crazy to run your workloads purely on PVMs? Or could you actually get 3x the capacity with no downsides? Arguing on the internet only takes you so far, so I decided to actually run a test to see for myself.
+TL;DR: It works surprisingly well, but there are many caveats and I would only recommend this for advanced Kubernetes users in specific situations. In general, if you are not using PVMs to some degree in your GKE cluster, you are probably leaving money on the table.
+The data we need
+To do this test in the most robust way possible, I wanted to collect:
+The average number of pods running at any given time,
+The average number of nodes that are in the cluster
+The lowest number of pods
+The lowest number of nodes
+If you can run 10 pods on a regular GKE cluster, then you should be able to run 30 of those same pods on a Preemptible GKE cluster for the same price. But if the PVMs shut down so often that the average number of pods is less than 10 or even if the lowest number of pods drops below 10, then there will be disruptions. Same for Nodes: if it drops below 1, the PVMs will cause disruptions.
+The cluster(s)
+In order to give my cluster the best chance to do well, I decided to use a GKE Regional Cluster. These are really cool, because they automatically spread over all three zones in a region and give you multiple masters for high availability. More importantly, it protects against PVM node stock-outs in a particular zone, which can happen if the Google Compute Engine system needs more VMs for standard nodes in that zone.
+I created two clusters so I could test two different scenarios.
+The first was a three-node PVM cluster, which is the default size of a cluster in GKE. But because they are all PVMs, this cluster is cheaper than a single n1-standard-1 instance. I’d say this setup is perfect for folks who want to kick the tires or are running test workloads, but want a cluster running 24/7.
+The second is a six-node PVM cluster. This is double the size of a three-node cluster, but still 30% cheaper than a three-node cluster of standard VMs. I feel this is a much more realistic test for production systems because you can theoretically double your capacity and lower your costs at the same time.
+Data collection
+To collect the data, I knew I had to put together a few different services.
+First, I needed to actually collect stats from the Kubernetes API. In order to do this, I created a DaemonSet that exposed a REST endpoint. This DaemonSet would use the Kubernetes APIs to find out how many nodes and pods were running in the cluster. I chose to use a DaemonSet because that was an easy way to ensure that there was always a copy running on each node, so unless all nodes were down I could ping at least one of them.
+Second, I needed something off cluster to actually ping this DaemonSet and collect the data. To do this, I used Google App Engine and the Google Cloud Scheduler service. I used the cron service to run my App Engine function once a minute, but I needed more granularity. So, I just ran a loop inside my App Engine function that executed once a second 60 times. Not super scientific, but it works and is simple to set up.
+Image for post
+Now for the pods. I wants to run 10 pods per node, so I just used a simple nginx deployment and set the replicats = #Nodes x 10.
+Finally, I needed a place to store and query this data. Even though it would only be a few 100 MB in size, I used Google BigQuery because it is serverless, needs zero setup, and is easy to use. My schema was very simple, for each call to the DaemonSet, I would store the number of pods, nodes, and the latency it took for the call to return. The latency number depends a lot on random network conditions, but I expected the number to be in the very low second range most of the time.
+Now came the boring part. Waiting. I needed at least a month of data before I could make any sort of claim. So I deployed everything and forgot about it for a while. A long while…
+
+The results
+Lucky for you, I already did the waiting part!
+First, let’s see what the average and minimum number of pods and nodes are. We can do that with a simple SQL query:
+SELECT 
+  avg(nodes) as avgnodes, 
+  avg(pods) as avgpods, 
+  min(nodes) as minnodes, 
+  min(pods) as minpods
+FROM <DATASET>.<TABLE>
+For the three node cluster, the results are as follows:
+╔════════════════════╦═══════════════════╦══════════╦═════════╗
+║      avgnodes      ║      avgpods      ║ minnodes ║ minpods ║
+╠════════════════════╬═══════════════════╬══════════╬═════════╣
+║ 2.9984359359062274 ║ 29.99116207854014 ║        1 ║       0 ║
+╚════════════════════╩═══════════════════╩══════════╩═════════╝
+And for the six node cluster:
+╔═══════════════════╦═══════════════════╦══════════╦═════════╗
+║     avgnodes      ║      avgpods      ║ minnodes ║ minpods ║
+╠═══════════════════╬═══════════════════╬══════════╬═════════╣
+║ 5.996882929477012 ║ 60.00895171877486 ║        5 ║      30 ║
+╚═══════════════════╩═══════════════════╩══════════╩═════════╝
+You can see some interesting things from these numbers. First of all, the average numbers are super close to the max numbers. This shows us the GKE is very fast to recover from PVM nodes shutting down. Remember, PVMs always shut down after 24 hours, so these shutdown events are happening all the time.
+Note: The avgpods for the six node cluster is slightly above the max. I think this is because of consistency issues and pods being in the pending status or something. Not 100% sure.
+The next thing is the min numbers. First of all, it is clear that PVMs cause some huge churn. For the smaller cluster, we dropped to 0 which is not good. For the larger cluster, we dropped to half the max, which isn’t that bad at all. Remember, we are running 2x the capacity for 30% less cost!
+These numbers only tell us half the story. Averages and absolute minimums can be very deceiving. What we really care about is the distribution of requests, and things like p50, p90, and p99 latency. So let’s write a new SQL query that can give us these numbers.
+SELECT 
+  latency, 
+  count(*) as occurrences 
+FROM (
+  SELECT 
+    pods, 
+    TIMESTAMP_DIFF(time, 
+                   LAG(time) OVER (ORDER BY time ASC), 
+                   SECOND
+    ) as latency 
+  FROM <DATASET>.<TABLE> 
+  ORDER BY time
+)
+GROUP BY delta 
+ORDER BY delta DESC
+Ok this query is a LOT more complicated (thank you coworkers from the BigQuery team for helping with this!), but it gives us results like this:
++---------+-------------+
+| latency | occurrences |
++---------+-------------+
+|      10 |          28 |
+|       9 |          39 |
+|       8 |          40 |
+|       7 |          54 |
+|       6 |          64 |
+|       5 |         100 |
+|       4 |         145 |
+|       3 |         258 |
+|       2 |         594 |
+|       1 |     2409521 |
+|       0 |     1812774 |
++---------+-------------+
+What this tells us is the number of requests that had a latency of zero seconds, one second, etc.
+Here is all the data and some graphs:
+Image for post
+See the data here
+We can see that the VAST majority of requests are in the sub-two second range, which is great.
+However, there is a long tail of requests for the smaller cluster that take over 200 seconds to complete. This is obviously when the cluster fell to zero nodes.
+Here is the really cool part. The P99.9 latency for both clusters is still sub-two second!
+Conclusion
+The performance of PVMs in GKE was much better than I expected. I thought they would be pretty good, but have extended periods where they were all down at once. While this did happen for the smaller cluster, the larger cluster was basically big enough that it could shrug off node churn quite well.
+Because a single node going down in a large cluster has less effect than in a small cluster, I’m led to believe that the larger the cluster, the less likely that this churn will affect your workloads.
+Using PVMs also creates a natural chaos monkey in your system. Because nodes are constantly churning, you code is always being tested for resiliency. This is awesome because your infra is more prepared for a real outage.
+Of course, running a stateful workload (like a database) would be much more complicated or impossible. Also, running something that needs the highest uptime possible would also be more challenging on PVMs because of the implicit risk. For both of these scenarios, you can easily use GKE Node Pools to create a mix of Preemptible and Standard VMs to fit your needs.
+A core promise of the cloud has always been lower costs due to automation and economies of scale. I really feel if you aren’t taking advantage of PVMs with GKE, you are missing out on that promise.
+It’s a single flag or button click to create a cluster with PVMs, so what are you waiting for?
+Image for post
+“group of people doing fist bumps” by rawpixel on Unsplash
+A final word
+For this test, I only cared about the number of pods that were running. In real life, you would have multiple microservices each with their own pods. If all the pods from a single microservice goes down, this is bad news. You can use PodAffinity rules to make sure this doesn’t happen.
