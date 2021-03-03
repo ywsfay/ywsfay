@@ -1,0 +1,35 @@
+The Differences Between Kubernetes and Openshift
+I’m a Cloud Consultant at Levvel that specializes in Kubernetes. We are partners with Red Hat, so I was asked to skill up on Red Hat Openshift. Red Hat Openshift is a Platform as a Service based on Kubernetes, but I was largely unaware of the different terms in use in the OpenShift ecosystem.
+I wrote this to assist people who are familiar with Kubernetes but unfamiliar with Openshift, so that they can understand the different verbiage used in each ecosystem. I’ll cover some of the infrastructure differences between Kubernetes and OpenShift — specifically, the differences between route/router and ingress/ingress controllers and between namespaces and projects.
+Let’s get started.
+OpenShift is a platform as a service (PaaS) from Red Hat that is built on Docker and Kubernetes. Kubernetes is an open source, container as a service (CaaS) project originating from Google.
+Figure 1. below shows Kubernetes components in purple and OpenShift components in orange.
+Image for post
+Figure 1. OpenShift project (Namespace)
+Routes/Routers
+The first block that I didn’t recognize in the diagram is the orange “Routes” block. Looking at the Red Hat documentation:
+“An OpenShift Enterprise route exposes a service at a host name, like www.example.com, so that external clients can reach it by name.”
+“An OpenShift Enterprise administrator can deploy routers to nodes in an OpenShift Enterprise cluster, which enable routes created by developers to be used by external clients.”
+To clarify, the default Router in Openshift is an actual HAProxy container providing reverse proxy capabilities.
+The route is an Openshift construct that defines the rules you want to apply to incoming connections.
+This matches the Ingress and Ingress Controller resources in Kubernetes.
+Where in Kubernetes the Ingress Controller could be a NGINX container providing reverse proxy capabilities, and the Ingress Resource defines the connection rules.
+In short, an Ingress is a collection of rules that allow inbound connections to reach the cluster services.
+Before you start using the Ingress resource, you need to create an Ingress controller to satisfy an Ingress — creating the Ingress resource will have no effect without an Ingress controller.
+The table below maps the Kubernetes name to the OpenShift name:
+Image for post
+Project
+Figure 2. shows the next construct in OpenShift, the project, which I did not understand:
+Image for post
+Figure 2. OpenShift access and control
+I found the answer in the book OpenShift for Developers, A Guide for Impatient Beginners by Grant Shipley and Graham Dumpleton.
+The following is quoted from the book verbatim:
+Namespace
+“The primary grouping concept in Kubernetes is the namespace. Namespaces are also a way to divide cluster resources between multiple uses. That being said, there is no security between namespaces in Kubernetes; if you are a “user” in a Kubernetes cluster, you can see all the different namespaces and the resources defined in them.”
+Project
+“The first new concept OpenShift adds is project, which effectively wraps a namespace, with access to the namespace being controlled via the project. Access is controlled through an authentication and authorization model based on users and groups. Projects in OpenShift therefore provide the walls between namespaces, ensuring that users, or applications, can only see and access what they are allowed to.”
+So, projects are namespaces with security annotations.
+Summary
+OpenShift route exposes a service at a host name, like www.example.com, so that external clients can reach it by name in a mature fashion. The route function is mature in OpenShift and easy to implement.
+Ingress and Ingress Controller are still a beta resource at time of writing and should not be considered stable for production use.
+Projects enables multitenant use of an OpenShift cluster with access privileges determined by the identity of the user or the team they belong to.
