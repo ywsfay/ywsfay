@@ -1,0 +1,66 @@
+Kubernetes 120: Networking Basics
+The next step is to make it accessible through a web browser. This post will go over some basic Kubernetes networking topics, and in the process, make our Gitea container accessible over the public internet
+Opening Container Ports
+By default, pods are essentially isolated from the rest of the world. In order to route traffic to our application, we need to open the set of ports we plan to use for the container.
+The software inside our Gitea container was designed to listen on port 3000 for HTTP requests, and 22 for SSH connections (to clone repositories). Let’s open up these ports in our container through the YAML file:
+
+Apply the updated file to the cluster:
+$ kubectl apply -f gitea.yaml
+Now, we should then be able to run kubectl describe deployment to see our newly opened ports listed in the deployment summary. Our pod should have ports 3000 and 22 open for connections.
+$ kubectl describe deployment | grep Ports
+    Ports:        3000/TCP, 22/TCP
+Image for post
+Ports 3000 and 22 are now open on the container itself, but aren’t yet exposed to the open internet
+Debugging with Port Forward
+The ports on our container should now be open, but we still need a way to communicate with the pod in the cluster. For debugging purposes, we can attach to our pod using kubectl port-forward
+# grab the name of your active pod
+$ PODNAME=$(kubectl get pods --output=template \
+     --template="{{with index .items 0}}{{.metadata.name}}{{end}}")
+# open a port-forward session to the pod
+$ kubectl port-forward $PODNAME 3000:3000
+Now, kubectl will forward all connections on port 3000 on your local machine into the pod running in the cloud. If you open http://localhost:3000 in your web browser, you should be able to interact with the server as though it were running locally.
+Image for post
+“kubectl port-forward” creates a temporary direct connection between an individual pod and your localhost
+Image for post
+Connecting to http://localhost:3000 should present you with the Gitea sign up page
+Creating an External LoadBalancer
+Now that we know our pod is working, lets make it accessible to the public internet. For this, we need to add a new Kubernetes resource that will provision a public public IP address and route incoming requests to our pod. This can be accomplished using a Kubernetes resource called a Service. There are a few different types of Services we could use, but for our use case we will use a LoadBalancer.¹
+
+Like the Deployment, the Service makes use of a selector (lines 29–30). This selector tells the LoadBalancer which pods to route traffic to. When the LoadBalancer receives requests, it will intelligently distribute the load to all pods that match the selector. In our case, load balancing is easy because we have just one pod.
+The ports managed by the LoadBalancer are defined in lines 31–39. Along with a unique name and the protocol type (TCP/UDP), you must also define “port” and “targetPort”. These two fields define a mapping from ports on the external IP (port) to the ports used by the container (targetPort).² On lines 33 and 34, we are saying that the LoadBalancer will listen to requests on port 80 (the default port your web browser uses to view websites), and pass the request to port 3000 on our pod.
+Once again, we need to apply our updates to the cluster
+$ kubectl apply -f gitea.yaml
+After waiting a couple minutes for your changes to propagate, check on your service
+$ kubectl get service
+NAME            TYPE           CLUSTER-IP     EXTERNAL_IP    AGE
+gitea-service   LoadBalancer   10.27.240.34   35.192.x.x     2m
+After a couple minutes, you should see an external IP automatically added to your service. Entering this IP into your web browser will allow you to interact with the web server hosted by your pod.
+Image for post
+The new LoadBalancer exposes an external IP address. Incoming requests on port 80 will be routed to port 3000 on the Gitea pod. The Gitea sign up page should now be accessible over the open internet.
+Inter-Pod Communication: ClusterIP Service
+If you try running through the Gitea sign-up page, you’ll see there’s still something missing: Gitea requires a database to function. To solve this, we could either add a MySQL container into the Gitea pod as a side-car, or we can create a new pod solely for MySQL.³ Both approaches may have their benefits and trade-offs, depending on your requirements. For the purposes of this tutorial, we will create a new pod.
+Let’s start a new YAML file called mysql.yaml to manage the database:
+
+Most of this should look familiar. Once again, we are declaring a Deployment to manage our single pod, and we are managing network connections through a Service. In this case, the service is of type “ClusterIP”; this simply means that the IP is exposed only within the cluster, rather than externally like through the LoadBalancer we made for the Gitea service.
+Apply this new YAML file to the cluster
+$ kubectl apply -f mysql.yaml
+You should now see a new pod, deployment, and service added to your cluster
+$ kubectl get pods
+NAME        READY     STATUS    RESTARTS   AGE
+gitea-pod   1/1       Running   0          9m
+mysql-pod   1/1       Running   0          9s
+$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+gitea-deployment   1         1         1            1           11m
+mysql-deployment   1         1         1            1           5m
+$ kubectl get services
+NAME            TYPE           CLUSTER-IP     EXTERNAL_IP    AGE
+gitea-service   LoadBalancer   10.27.240.34   35.192.x.x  2m
+mysql-service   ClusterIP      10.27.254.69   <none>         6m
+Image for post
+MySQL is now deployed as a separate pod within the cluster. Its ClusterIP service can be accessed by the Gitea pod within the cluster, but it is not exposed over the public internet
+The ClusterIP Service will automatically generate an internal IP address for us, listed in the console output as “CLUSTER-IP”. Any container within the cluster can access our MySQL pod using this address. Using these internal IP addresses directly is a bad practice, however. Instead, Kubernetes has an even easier way to access our new service: we can simply type “mysql-service” in the address field. This is possible due to a built-in pod called “kube-dns”, which manages internal DNS resolution for all services.⁴ In this way, you can ignore ephemeral internal IP addresses, and instead use static, human readable service names.
+To allow Gitea to communicate with the MySQL pod, simply write the name and port of the service in the “host” field of the web UI. If everything is working as expected, you should see an “access denied” error. This means our pods can successfully communicate, but they need more configuration to successfully authenticate. Stay tuned for the next post to learn how.
+Image for post
+What’s Next
+This post went over some of the basics of Kubernetes Networking, including container ports, port forwarding, LoadBalancer and ClusterIP services, and kube-dns. Of course, networking is a giant topic, so much was left unsaid. If you want a lower-level explanation of how networking is implemented in Kubernetes, check out this series. If you’re interested in controlling which pods can communicate in your cluster, you should look into Network Policies. If you want greater control over how services communicate with each other, look into service mesh offerings like Istio.
