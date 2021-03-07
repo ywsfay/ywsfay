@@ -1,0 +1,126 @@
+Drastically Improve your Kubernetes Deployments with Helm
+Kubernetes is rapidly becoming the de facto standard in running containerized workloads. While Kubernetes gets a lot of things right out of the box, application releases isn’t necessarily one of them.
+More often than not, plain Kubernetes manifests are used to roll out an application and its resources. This works fine at first, and it allows you to have Infrastructure as Code — kind of. While it is perfectly viable to keep your YAML files in a Git repository, there is no real way of versioning them properly. Sure, you can use the Git revision, but ideally you’d have something more apt, like semantic versioning.
+That’s where Helm comes in. Helm is a package manager for Kubernetes, sure. But it’s also your gateway to exceedingly better application and release management on your Kubernetes cluster. Helm allows you to define applications as a set of components on your cluster, and provides mechanisms to manage those sets from start to end.
+The official website gives a very brief description:
+“Helm allows you to define, install and upgrade even the most complex deployments.”
+But to be fair, I don’t think that does it justice. Besides being a “package manager”, Helm is a cornerstone component that truly enables a solid development and release workflow.
+In this article, we’ll walk through the complete life cycle for a release. We’ll start with an introduction to Helm and its various components. Afterwards, we’ll deploy, upgrade, roll back, and eventually delete an application from a Kubernetes cluster.
+What makes Helm different?
+Helm defines applications and their logical components in so-called Charts. You can consider charts a set of one or more applications, that together form a release.
+For instance, let’s assume we’re doing a Wordpress release on our cluster. For it to run properly, we’d need:
+A MySQL instance to store our data
+Persistent Volume to store our database’s data
+WordPress itself, either with or without a reverse proxy
+Helm groups these into a chart, which you can then deploy and maintain over an extended period of time. Every time you deploy a chart to your cluster, the server-side component of Helm — named Tiller — will create a release. This release tracks your application deployment over time. We’ll get back to them later.
+Using Helm, you can deploy virtually anything; from a simple Redis cache, to the most complex web application you can imagine. The deployment model looks something along the lines of:
+Image for post
+The Helm Deployment Model
+As mentioned before, whenever Helm deploys a chart, a release is created to track it. This allows you to control the deployment over time, and perform upgrades on it.
+Unlike regular Kubernetes deployment manifests, Helm charts are versioned. Tiller keeps track of the chart’s version when it is deployed to your cluster, and you can upgrade or downgrade your chart at any time.
+This deployment model makes Helm extremely potent, both for teams that release their own software, as well as DevOps teams looking to improve their cluster management.
+In this article, we’ll go over the core concepts that comprise Helm, and how you can use them to more effectively deploy and manage your Kubernetes applications over time.
+Prerequisites
+If you want to follow the steps in this guide on your own cluster, you will need the following:
+Running Kubernetes cluster *
+kubectl installed and configured to interact with your cluster
+If you don’t have a cluster yet, Digital Ocean provides them at very competitive prices. You can use my referral link to get $100 credit for your first 2 months to try it out for free.
+Image for post
+Helm and Tiller
+Helm consists of two components: Helm and Tiller. Helm itself is the client-side component that you run in your command line, while tiller lives in your cluster, doing all of the hard work.
+Installing Helm
+Before we continue, you will need to download and install Helm. Head over to the official release page and get the latest Helm release for your specific operating system and architecture. For the purpose of this tutorial, we used the Linux version. First off, unpack the tarball:
+$ tar -zxvf helm-v2.0.0-linux-amd64.tgz
+After that, find the helm binary, and move it to /usr/local/bin . To verify Helm is installed properly, run helm version. The output should be something along the lines of:
+> Client: &version.Version{SemVer:"v2.13.0", GitCommit:"79d07943b03aea2b76c12644b4b54733bc5958d6", GitTreeState:"clean"}
+You can also use package managers like aptitude or homebrew, but they may not always install the latest version available.
+Installing Tiller
+Now that you have Helm working on your machine, you can deploy Tiller to your cluster. By default, Tiller will be installed to the current context specified in your .kubeconfig. If you want to deploy to a different cluster, make sure you specify the --kube-context flag to specify your context.
+Tiller is the component handling the actual manipulation of cluster resources to install and upgrade workloads. Granting Tiller access can be done in a number of ways — but for the purpose of this guide, we will assign it a cluster-admin role:
+
+Create the ClusterRole by deploying it to your cluster:
+$ kubectl create -f tiller-sa.yaml
+Once the service account is created, deploy Tiller to your cluster and assign it the service account you have just created:
+$ helm init --service-account tiller --history-max 200
+The --service-account flag specifies that Tiller should run under the tiller account previously created. Without it, it would have insufficient permissions to deploy or maintain charts.
+The --history-max flag specifies the maximum number of objects Helm persists in its history. If this flag isn’t specified, history objects are never pruned. In the long run, this can build up to a large amount of objects in your cluster.
+Once you have completed this step, run helm version once more. You should now see both the client and server version information:
+> Client: &version.Version{SemVer:"v2.13.0", GitCommit:"79d07943b03aea2b76c12644b4b54733bc5958d6", GitTreeState:"clean"}
+> Server: &version.Version{SemVer:"v2.13.0", GitCommit:"79d07943b03aea2b76c12644b4b54733bc5958d6", GitTreeState:"clean"}
+Helm Charts
+Charts are the Helm’s deployable artifacts. Charts are always versioned using semantic versioning, and come either packed, in versioned .tgz files, or in a flat directory structure.
+Charts always follow a specific directory structure:
+
+The Chart.yaml file contains information about the chart; the name, version, a description, icon, etc.
+The charts folder contains all the charts required to install the chart. This includes any dependencies of the correct version. For example, if a Wordpress chart requires the nginx and MySQL charts, these charts would be contained in the charts folder as well.
+If we take a look at the Chart.yaml file for the official Wordpress chart:
+
+You can see that there is both a version and an appVersion field. The former indicates the version of the chart, and is what allows us to apply versioning to our Chart releases. The latter simply represents the version of the primary application the chart represents, in this case, Wordpress 5.1.1.
+This is one of the key differences between Helm Charts and regular Kubernetes manifests. Whenever a chart is created using helm package, the version in the Chart will be used whenever that Chart is installed. Once installed, an installation will be created on the cluster that tracks that instance, and subsequently allows it to be updated, rolled back, or removed.
+Having these mechanisms for versioning, installing and updating your application that may span multiple workloads is huge. It allows you to roll out centralised released, and ensure that your application and its dependencies are always running their correct versions.
+Next up, we will take a look at deploying and updating the Wordpress Chart shown above.
+Installing and Managing a Chart
+Before you continue, make sure Helm is properly initialised. If you followed the installation steps of this guide, this has been done already. If you haven’t, you can initialise Tiller using one of two commands:
+If your cluster is already running Tiller, run helm init --client-only to initialise Helm locally
+If your cluster isn’t running Tiller, refer to the Helm and Tiller section of this article
+Repositories
+Helm uses repositories to serve its charts. The default repository contains a wide variety of applications, but you can also add third party repositories, or host your own. Combined with chart versioning, hosting your own repository is a very potent way of managing your software releases.
+For now we’ll use the Wordpress chart in the default repository. Go ahead and update the repository by running helm repo update. The output should be something along the lines of:
+> Hang tight while we grab the latest from your chart repositories...
+> ...Skip local chart repository
+> ...Successfully got an update from the "stable" chart repository
+> Update Complete. ⎈ Happy Helming!⎈
+You can verify the update was successful by running:
+$ helm search stable/wordpress --versions
+This should give you a fairly long list showing all Wordpress charts. Note that every chart has both a chart version and an application version. These aren’t necessarily tied — for each application version, multiple charts may exist.
+For all available charts in the stable branch, see the official charts repository:
+helm/charts
+Curated applications for Kubernetes. Contribute to helm/charts development by creating an account on GitHub.
+github.com
+
+Installation
+At the time of writing, Wordpress version 5.1.1 is the latest in the stable repository. Because we will be upgrading our installation later, we’ll start off by installing an older chart. We’ll start off with version 5.0.1:
+$ helm install stable/wordpress --name my-wordpress --version 5.0.1
+This chart uses MariaDB as the database, and running the above command will automatically provision the required resources on your cluster.
+Depending on your cloud provider, the output should look something along the lines of:
+
+The above is the status of the chart. Because Helm keeps track of named releases, you can always retrieve this information by running helm status my-wordpress.
+One of the key differences between Helm deployments and regular Kubernetes deployments is that with Helm, releases are tracked even after they have been deleted. We’ll dig further into release statuses later on in the article.
+Next up, we will get into the upgrading and rollback features Helm offers to upgrade our Wordpress chart to the latest version.
+Upgrades and Rollbacks
+One of the powerful mechanisms Helm provides is the ability to control releases by performing upgrades and rollbacks. In the previous step, we have deployed an older version of the Wordpress chart. In this step, we’ll upgrade it to the most recent version.
+helm upgrade accepts two arguments: the release name, and the chart to upgrade to. If you want to upgrade to a specific chart version, you can do so by specifying the --version like we did previously. For now, we’ll just upgrade to the most recent version of the Wordpress chart available. At the time of writing, the most recent version was 5.1.1.
+To upgrade your Wordpress release to the latest version, run:
+$ helm upgrade my-wordpress stable/wordpress
+If all went well, your release should be upgraded:
+> Release "my-wordpress" has been upgraded. Happy Helming!
+> LAST DEPLOYED: Mon Mar 25 11:57:47 2019
+> NAMESPACE: default
+> STATUS: DEPLOYED
+Below that, you’ll see the new helm status of your release, reflecting the upgrade. That’s all there’s to it.
+In case the upgrade caused undesirable side effects, you can always perform a rollback using helm rollback. If you want to try doing a rollback, you can perform a dry run, which will leave the actual release unaffected.
+To perform a dry run rollback to the previous release, simply run:
+$ helm rollback my-wordpress 0 --dry-run
+This will simulate a rollback, without actually mutating any of the cluster objects. Therefore, if you helm ls , your Wordpress chart should still be running at the most recent version.
+Next up, we’ll dive into how you can properly clean up your resources.
+Cleaning up
+Of course, we don’t want any of these resources to linger on our cluster. In contrast to regular Kubernetes deployments, Helm releases include the deleted state in its lifecycle. That is to say, when you delete a Helm chart, it will transition into a deleted state rather than just disappearing.
+We’ll dive in to the various states a chart can reside in after its deletion. To start off, we’ll simply delete our Wordpress release from the cluster:
+$ helm delete my-wordpress
+Which should give you a simple:
+> release "my-wordpress" deleted
+Nice. This action has cleaned all the pods associated with the release, which you can verify by running kubectl get pods.
+While the cluster resources associated with the release are deleted, Tiller is still keeping track of the history of the release. However, you can not “resurrect” this release, or re-use its name.
+Purging Releases
+Should you want to re-use a release’s name in the future, or you’re simply not interested in keeping track of a release’s history, you can purge a release.
+To do so, simply pass the --purge flag when calling helm delete . Because we want to revert the cluster to the state it resided in at the start of this article, we’ll purge the Wordpress release we created previously:
+$ helm delete my-wordpress --purge
+Afterwards, you can run a helm ls to verify the release is no longer tracked by Tiller.
+Conclusion
+In this article, you have learned how to use Helm to install, upgrade, roll back and remove an application release. These are only the basics of using Helm for a release’s lifecycle, but they can take you very far in managing your Kubernetes cluster.
+If you’re looking to continue your journey with Helm, and use it to release and manage your own application, your next steps could be:
+Create and publish a Helm chart for your application
+Dive into the documentation on values.yaml to learn how you can pass environment variables and other environment-specific variables to your releases
+Combine passing values to your Helm chart with Infrastructure as Code to automate creating, deploying and updating various environments for your application
+Depending on how this article is received, I will further elaborate on the points above in subsequent articles, and turn it into a series.
+I hope this article has been useful to you. Thank you for reading.
