@@ -1,0 +1,261 @@
+Building stuff with the Kubernetes API (Part 4) — Using Go
+This is part 4 of a multipart series which covers the programmability of the Kubernetes API using the official clients. This post covers the use of the Kubernetes Go client, or client-go, to implement a simple PVC watch tool which has been implemented in Java and Python in my previous posts.
+The Kubernetes Go Client Project (client-go)
+Before jumping into code, it is beneficial to understand the Kubernetes Go client (or client-go) project. It is the oldest, of the Kubernetes client frameworks, and therefore comes with more knobs and features. Client-go does not use a Swagger generator, like the OpenAPI clients we have covered in previous posts. Instead, it uses source code generators, originated from the Kubernetes project, to create Kubernetes-style API objects and serializers.
+The project is a collection of packages that can accommodate different programming needs from REST-style primitives to more sophisticated clients.
+Image for post
+RESTClient is a foundational package that uses types from the api-machinery repository to provide access to the API as a set of REST primitives. Built as an abstraction above RESTClient, the Clientset will be your starting point when creating simple Kubernetes client tools. It exposes versioned API resources and their serializers.
+There are several other packages in client-go including discovery, dynamic, and scale. While we are not going to cover these packages, it is important to be aware of their capabilities.
+A simple client tool for Kubernetes
+Again, let us do a quick review of the tool we are going to build to illustrate the usage of the Go client framework. pvcwatch, is a simple CLI tool which watches the total claimed persistent storage capacity in a cluster. When the total reaches a specified threshold, it takes an action (in this example, it’s a simple notification on the screen).
+Image for post
+You can find the complete example on GitHub.
+The example is designed to highlight several aspects of the Kubernetes Go client including:
+connectivity
+resource list retrieval and walk through
+object watch
+Setup
+The client-go project supports both Godep and dep for vendoring management. I use dep for ease of use and continued adoption (yes, yes, I know vgo… I know). For instance, the following is the minimum Gopkg.toml config required to setup your code with dependency on client-go version 6.0 and version 1.9 of the Kubernetes API:
+[[constraint]]
+  name = "k8s.io/api"
+  version = "kubernetes-1.9.0"
+[[constraint]]
+  name = "k8s.io/apimachinery"
+  version = "kubernetes-1.9.0"
+[[constraint]]
+  name = "k8s.io/client-go"
+  version = "6.0.0"
+Running dep ensure takes care of the rest.
+Connecting to the API server
+The first step in our Go client program will be to setup a connection to the API server. To do this, we will rely on utility package clientcmd as shown.
+import (
+...
+    "k8s.io/client-go/tools/clientcmd"
+)
+func main() {
+    kubeconfig := filepath.Join(
+         os.Getenv("HOME"), ".kube", "config",
+    )
+    config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+    if err != nil {
+        log.Fatal(err)
+    }
+...
+}
+Client-go makes this a trivial task by providing utility functions to bootstrap your configuration from different contexts.
+From a config file
+As is done in the example above, you can bootstrap the configuration for connecting to the API server from a kubeconfig file. This is ideal when your code will run outside of a cluster.
+clientcmd.BuildConfigFromFlags("", configFile)
+From a cluster
+If your code will be deployed in a Kubernetes cluster, you can use the previous function, with empty parameters, to configure your connection using cluster information when the client code is destined to run in a pod.
+clientcmd.BuildConfigFromFlags("", "")
+Or, use package rest to create the configuration from cluster informtion directly as follows:
+import "k8s.io/client-go/rest"
+...
+rest.InClusterConfig()
+Create a clientset
+We need to create a serializer client to let us access API objects. Type Clientset, from package kubernetes, provides access to generated serializer clients to access versioned API objects as shown below.
+type Clientset struct {
+    *authenticationv1beta1.AuthenticationV1beta1Client
+    *authorizationv1.AuthorizationV1Client
+...
+    *corev1.CoreV1Client
+}
+Once we have a properly configured connection, we can use the configuration to initialize a clientset as shown in the next snippet.
+func main() {
+    config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+    ...
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+For our example, we will use version v1 API objects. So, next we use the clientset to access the core API resources via method CoreV1() as shown.
+func main() {
+    ...
+    clientset, err := kubernetes.NewForConfig(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+    api := clientset.CoreV1()
+}
+You can see the available clientsets here.
+Listing cluster PVCs
+One of the most basic operations we can do with the clientset is to retrieve resource lists of stored API objects. For our example, we are going to retrieve a namespaced list of PVCs as follows.
+import (
+...
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+func main() {
+    var ns, label, field string
+    flag.StringVar(&ns, "namespace", "", "namespace")
+    flag.StringVar(&label, "l", "", "Label selector")
+    flag.StringVar(&field, "f", "", "Field selector")
+...
+    api := clientset.CoreV1()
+    // setup list options
+    listOptions := metav1.ListOptions{
+        LabelSelector: label, 
+        FieldSelector: field,
+    }
+    pvcs, err := api.PersistentVolumeClaims(ns).List(listOptions)
+    if err != nil {
+        log.Fatal(err)
+    }
+    printPVCs(pvcs)
+...
+}
+In the snippet above, we use ListOptions to specify label and field selectors (as well as namespace) to narrow down the PVC resources returned as type v1.PeristentVolumeClaimList. The next snippet shows how we can walk and print the list of PVCs that was retrieved from the server.
+func printPVCs(pvcs *v1.PersistentVolumeClaimList) {
+    template := "%-32s%-8s%-8s\n"
+    fmt.Printf(template, "NAME", "STATUS", "CAPACITY")
+    for _, pvc := range pvcs.Items {
+        quant := pvc.Spec.Resources.Requests[v1.ResourceStorage]
+        fmt.Printf(
+            template, 
+            pvc.Name, 
+            string(pvc.Status.Phase), 
+            quant.String())
+    }
+}
+Watching the cluster PVCs
+The Kubernetes Go client framework supports the ability to watch the cluster for specified API object lifecycle events including ADDED, MODIFIED, DELETED generated when an object is created, updated, and removed respectively. For our simple CLI tool, we will use this watch capability to monitor the total capacity of claimed persistent storage against a running cluster.
+When the total claim capacity, for a given namespace, reaches a certain threshold (say 200Gi), we will take an arbitrary action. For simplicity sake, we will just print a notification on the screen. However, in a more sophisticated implementation, the same approach can be used to trigger a some automated action.
+Setup a watch
+Now, let us create a watcher for PersistentVolumeClaim resources using method Watch. Then, use the watcher to gain access to the event notifications from a Go channel via method ResultChan.
+func main() {
+...
+    api := clientset.CoreV1()
+    listOptions := metav1.ListOptions{
+        LabelSelector: label, 
+        FieldSelector: field,
+    }
+    watcher, err :=api.PersistentVolumeClaims(ns).
+       Watch(listOptions)
+    if err != nil {
+      log.Fatal(err)
+    }
+    ch := watcher.ResultChan()
+...
+}
+Loop through events
+Next, we are ready to start processing resource events. Before we handle the events, however, we declare variables maxClaimsQuant and totalClaimQuant of type resource.Quantity (to represent SI quantities in k8s) to setup our quantity threshold and running total.
+import(
+    "k8s.io/apimachinery/pkg/api/resource"
+    ...
+)
+func main() {
+    var maxClaims string
+    flag.StringVar(&maxClaims, "max-claims", "200Gi", 
+        "Maximum total claims to watch")
+    var totalClaimedQuant resource.Quantity
+    maxClaimedQuant := resource.MustParse(maxClaims)
+...
+    ch := watcher.ResultChan()
+    for event := range ch {
+        pvc, ok := event.Object.(*v1.PersistentVolumeClaim)
+        if !ok {
+            log.Fatal("unexpected type")
+        }
+        ...
+    }
+}
+The watcher’s channel, in the for-range loop above, is used to process incoming event notifications from the server. Each event is assigned to variable event where event.Object value is asserted to be of type PersistentVolumeClaim so we can extract needed info.
+Processing ADDED events
+When a new PVC is added, event.Type is set to value watch.Added. We then use the following code to extract the capacity of the added claim (quant), add it to the running total capacity (totalClaimedQuant). Lastly, we check to see if the total capacity is greater than the established max capacity (maxClaimedQuant). If so, the program can trigger an action.
+import(
+    "k8s.io/apimachinery/pkg/watch"
+    ...
+)
+func main() {
+...
+    for event := range ch {
+        pvc, ok := event.Object.(*v1.PersistentVolumeClaim)
+        if !ok {
+            log.Fatal("unexpected type")
+        }
+        quant := pvc.Spec.Resources.Requests[v1.ResourceStorage]
+        switch event.Type {
+            case watch.Added:
+                totalClaimedQuant.Add(quant)
+                log.Printf("PVC %s added, claim size %s\n", 
+                    pvc.Name, quant.String())
+                if totalClaimedQuant.Cmp(maxClaimedQuant) == 1 {
+                    log.Printf(
+                        "\nClaim overage reached: max %s at %s",
+                        maxClaimedQuant.String(),
+                        totalClaimedQuant.String())
+                    // trigger action
+                    log.Println("*** Taking action ***")
+                }
+            }
+        ...
+        }
+    }
+}
+Process DELETED events
+The code also reacts when PVCs are removed. It applies a reverse logic and decreases the deleted PVC size from the running total count.
+func main() {
+...
+    for event := range ch {
+        ...
+        switch event.Type {
+        case watch.Deleted:
+            quant := pvc.Spec.Resources.Requests[v1.ResourceStorage]
+            totalClaimedQuant.Sub(quant)
+            log.Printf("PVC %s removed, size %s\n", 
+               pvc.Name, quant.String())
+            if totalClaimedQuant.Cmp(maxClaimedQuant) <= 0 {
+                log.Printf("Claim usage normal: max %s at %s",
+                    maxClaimedQuant.String(),
+                    totalClaimedQuant.String(),
+                )
+                // trigger action
+                log.Println("*** Taking action ***")
+            }
+        }
+        ...
+    }
+}
+Run the program
+When the program is executed against a running cluster, it first displays the list of existing PVCs. Then it starts watching the cluster for new PersistentVolumeClaim events.
+$> ./pvcwatch
+Using kubeconfig:  /Users/vladimir/.kube/config
+--- PVCs ----
+NAME                            STATUS  CAPACITY
+my-redis-redis                  Bound   50Gi
+my-redis2-redis                 Bound   100Gi
+-----------------------------
+Total capacity claimed: 150Gi
+-----------------------------
+--- PVC Watch (max claims 200Gi) ----
+2018/02/13 21:55:03 PVC my-redis2-redis added, claim size 100Gi
+2018/02/13 21:55:03
+At 50.0% claim capcity (100Gi/200Gi)
+2018/02/13 21:55:03 PVC my-redis-redis added, claim size 50Gi
+2018/02/13 21:55:03
+At 75.0% claim capcity (150Gi/200Gi)
+Next, let us deploy another application unto the cluster that requests an additional 75Gi in storage claim (for our example, let us use Helm to deploy, say, an influxDB instance).
+helm install --name my-influx \
+--set persistence.enabled=true,persistence.size=75Gi stable/influxdb
+As you can see below, our tool immediately reacts to the new claim and displays our alert because the total claims are more then the threshold.
+--- PVC Watch (max claims 200Gi) ----
+...
+2018/02/13 21:55:03
+At 75.0% claim capcity (150Gi/200Gi)
+2018/02/13 22:01:29 PVC my-influx-influxdb added, claim size 75Gi
+2018/02/13 22:01:29
+Claim overage reached: max 200Gi at 225Gi
+2018/02/13 22:01:29 *** Taking action ***
+2018/02/13 22:01:29
+At 112.5% claim capcity (225Gi/200Gi)
+Conversely, when a PVC is deleted from the cluster, the tool react accordingly with an alert message.
+...
+At 112.5% claim capcity (225Gi/200Gi)
+2018/02/14 11:30:36 PVC my-redis2-redis removed, size 100Gi
+2018/02/14 11:30:36 Claim usage normal: max 200Gi at 125Gi
+2018/02/14 11:30:36 *** Taking action ***
+Summary
+This post, part of an on going series, starts coverage of programmatic interaction with the API server using the official Kubernetes client framework for the Go programming langue. As before, the code does a walk through of implementing a CLI tool to watch the total PVC sizes for a given namespace. The code uses a simple watched list to emit resource events from the server that are processed using an event loop.
+What’s next
+From this point on, the series will continue using the client-go framework. In the next write up, we will start exploring the use of the controller pattern to create more robust clients with the client-go tools.
