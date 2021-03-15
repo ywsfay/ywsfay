@@ -1,0 +1,82 @@
+Top 10 Kubernetes tips and tricks
+For the most part these are in no particular order. These are just the best tips I can give from what I have learned after using Kubernetes for a year.
+#1 Bash complete my kubectl commands for me
+This is probably the most simple to do but also one of the most helpful things to do when using Kubernetes. To add autocomplete (if using bash) just run this command:
+echo "source <(kubectl completion bash)" >> ~/.bashrc
+This will add autocompletion to your .bashrc so that whenever you open a shell it will enable it. I find autocomplete to be the best for long things like
+— all-namespaces
+#2 Add default memory limits and cpu limits to namespaces
+People make mistakes, it happens. If someone writes an application that, lets say, opens a connection to a database every second but never closes it then we now have a memory leak in one of our applications on the cluster. And if they deployed to the cluster with no limit set it can crash a node.
+To prevent this Kubernetes allows default limits to be set on a per namespace basis. To do this, it is as simple as creating a yaml for limit range and applying that to the namespace. Here is an example yaml for this:
+apiVersion: v1  
+ kind: LimitRange  
+ metadata:  
+   name: mem-limit-range  
+ spec:  
+   limits:  
+   - default:  
+       memory: 512Mi  
+     defaultRequest:  
+       memory: 256Mi  
+     type: Container
+Create a yaml with this and apply it to whatever namespace you want. For example namespace limit-example. After it is applied any container deployed to that namespace that doesn’t have a limit set will get the limit of 512Mi.
+#3 Kubelet can you please clean up my docker images
+This is already done by default by the kubelet. If no flag is set when starting the kubelet it will start garbage collection when var/lib/docker reaches 90% capacity. This is all fine and dandy but there is no default set for an inode threshold (before Kubernetes 1.7).
+You can potentially have var/lib/docker using only 50% disk space but your inodes could be all used. This could cause alot of problems for your workers.
+If you are running the kubelet version from 1.4–1.6 then you will have to add a flag to your kubelet.
+--eviction-hard
+=memory.available<100Mi,nodefs.available<10%,nodefs.inodesFree<5%
+These are the defaults when running 1.7 or higher. 1.6 does not watch inode usage by default, so adding that flag will solve that problem.
+#4 Minikube….mini but powerful for local
+Minikube is the absolute easiest way to get a Kubernetes cluster running locally. Simply follow these instructions. To get everything downloaded.
+Once everything is installed it is as simple as running:
+minikube start
+Once the command is finished you will then have a running kubernetes cluster locally.
+The trick comes in when you want to build an application locally and run it locally as well. If you run no other commands then when you do your docker build an image will still be built on your computer.
+To get your docker build to push images to the local kubernetes cluster you need to tell the docker machine that with this command:
+eval $(minikube docker-env)
+This should get you started in building applications locally onto a local kubernetes cluster.
+#5 Don’t just give out kubectl access to anyone
+This might just be a no brainer but when multiple teams are deploying to one cluster… which is what Kubernetes was built for, don’t just give out a generic kubectl to everyone. My suggestion would be to segregate teams based on a namespace and then use RBAC policies to allow access only to that namespace and that namespace alone.
+You can get really crazy in the access given out, read, create, and delete on a pod basis just to name a few. But one of the first main things to do is only allow access to secrets to admins, this seperates who might administer a cluster and who might just deploy to it.
+I hope to dive deeper into this in a seperate blog later on.
+#6 Pod Disruption Budgets are your friends.
+How does someone guarantee no downtime for an app with a kubernetes cluster?
+PodDisruptionBudget
+PodDisruptionBudget
+PodDisruptionBudget
+Clusters will be updated. Nodes will be drained and things will be moved, it is a given. PDB’s (PodDisruptionBudget) should be placed on every deployment that has more than 1 instance. A PDB can be created using a simple yaml applied to the cluster and uses label selectors to determine what a specific PDB is covering.
+NOTE: A PDB is only accounted for with a voluntary disruption, something like a hardware failure will not take PDB into account.
+An example PDB would be as follows:
+apiVersion: policy/v1beta1  
+ kind: PodDisruptionBudget  
+ metadata:  
+   name: app-a-pdb  
+ spec:  
+   minAvailable: 2  
+   selector:  
+       matchLabels:  
+         app: app-a
+The two biggest things to look at are the matchLabels and minAvailable sections. The matchLabels is what kubernetes looks at to see if the deployment is attached to the PDB. For example: If I have a deployment with the label app: app-a and a deployment with the label app: app-b then the example PDB will only apply to the first deployment.
+The minAvailable is what kubernetes looks at when something like a node drain is being done. Imagine app-a is running on Node 1, if a drain starts on Node 1 it will only evict app-a is there is currently at least 2 running.
+This lets you control how many instances you need running at any given time.
+#7 Is your app alive and ready?
+In Kubernetes you can define probes that the kubelet uses to determine whether or not your pod and app are healthy.
+There are two types to determine these things, Readiness probes and liveness probes.
+Readiness probes are used to determine when a container is ready to recieve traffic.
+Liveness probes are used to determine whether a container is healthy or needs to be restarted.
+The configs are simply added to the deployment yaml and can be customized with timeouts, retries, and delays. For a more in depth explanation of how to use them read this.
+#8 Label everything under the sun.
+Labels is one of the main foundations for Kubernetes. It lets objects be loosely coupled to other objects and also lets you query based on labels. You can even use the Kubernetes go client and watch for events based off of labels.
+You can do almost anything with the use of a label but a good example would be multiple environments within the same cluster.
+Let’s say you use the same cluster for dev and qa. This means you would have app-a potentially running in qa and dev at the same time. To accomplish this the easy way you could have to service objects, one that does a label select on app: app-a and environment: dev and another service object that selects on app: app-a but switches the dev with qa.
+What this gives you is two of the same app with a different endpoint for each app, allowing testing to be done at the same time.
+#9 Clean up your own mess.
+Kubernetes is a very very powerful system, but like any system it can eventually get bogged down. The kubelet has to do every check you tell it to and do it’s own checks at the same time.
+Of course having one service that connects to nothing will not bog the system down and of course kubernetes is built for scale. BUT scale up that one service to to millions and suddenly the kubelet will start to get bogged down.
+If you are deleting a deployment (or anything for that matter) for any reason just make sure that you clean up everything else with that, plain and simple.
+#10 Do you even GO bro?
+I saved my personal favorite for last. Go and learn GO.
+Kubernetes was built on GO, all of the add ons are built on GO, and they have even written a client for GO.
+The client-go can be used for all sorts of fun and interesting things. You can use it to extend kubernetes to your own liking. Think data collection, deployment engine, or a simple clean-up application.
+Learning that client with GO and using it within Kubernetes is probably biggest advice I can give anyone who is using a Kubernetes cluster.
