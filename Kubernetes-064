@@ -1,0 +1,233 @@
+Using Kubernetes ConfigMap Resources for Dynamic Apps
+What Are ConfigMaps?
+According to the docs, in Kubernetes, ConfigMap resources “allow you to decouple configuration artifacts from image content to keep containerized applications portable.” Used with Kubernetes pods, configmaps can be used to dynamically add or change files used by containers.
+Use Case
+As part of a Kubernetes installer our team wanted to deploy a lightweight file server to the Kubernetes cluster to handle default (root-path) ingress requests. And, we thought it would be nice if we could edit the index.html and CSS files without having to redeploy the application.
+To solve this use case, we decided to build a Golang application that would map part of its filesystem to a Kubernetes configmap resource.
+Golang Fileserver
+The file server app is really simple. It is only meant to serve static content to help Kubernetes users use the ingress functionality.
+package main
+import (
+“log”
+“net/http”
+)
+func main() {
+fs := http.FileServer(http.Dir(“html”))
+http.Handle(“/”, fs)
+log.Println(“Listening…”)
+http.ListenAndServe(“:8080”, nil)
+}
+The app container image is built with the below Dockerfile. It is a two-stage Dockerfile that first performs the Golang build within an Alpine container, then copies the compiled binary and empty html directory to a final scratch-based image.
+# build stage  
+FROM golang:alpine AS builder  
+WORKDIR /usr/local/go/src  
+COPY  main.go .  
+RUN CGO_ENABLED=0 GOOS=linux go build -o main .  
+  
+  
+# final stage  
+FROM scratch  
+WORKDIR /  
+COPY --from=builder /usr/local/go/src/main main  
+COPY html html  
+EXPOSE 8080  
+ENTRYPOINT ["/main"]
+Using scratch containers with Golang applications is a more secure and lightweight method to deploy Golang containers.
+Building and Running
+I use make to automate Docker operations. Below is the Makefile for this application.
+VERSION ?= 0.0.1  
+NAME ?= "ingress-default"  
+AUTHOR ?= "Jimmy Ray"  
+PORT_EXT ?= 8080  
+PORT_INT ?= 8080   
+NO_CACHE ?= true  
+  
+  
+.PHONY: build run stop clean  
+  
+  
+build:  
+docker build -f scratch.dockerfile . -t $(NAME)\:$(VERSION) --no-cache=$(NO_CACHE)  
+  
+  
+run:  
+docker run --name $(NAME) -d -p $(PORT_EXT):$(PORT_INT) $(NAME)\:$(VERSION) && docker ps -a --format "{{.ID}}\t{{.Names}}"|grep $(NAME)  
+  
+  
+stop:  
+docker rm $$(docker stop $$(docker ps -a -q --filter "ancestor=$(NAME):$(VERSION)" --format="{{.ID}}"))  
+  
+  
+clean:  
+@rm -f main  
+  
+  
+DEFAULT: build
+Using make removes variability between repetitive tasks. With the above Makefile, I can build and run my application in Docker, before I deploy the tested application to Kubernetes.
+Configuring Kubernetes
+For this solution, we need to configure a Kubernetes namespace, configmap, deployment, service, and ingress. We do this by using the kubectl apply -f method. This is a declarative means of applying changes to Kubernetes cluster resources.
+Below is the YAML file for the Kubernetes resources we will munge.
+apiVersion: v1  
+kind: Namespace  
+metadata:  
+  name: ingress-default 
+  labels:  
+    app: ingress-default  
+---  
+kind: ConfigMap  
+apiVersion: v1  
+metadata:  
+  name: ingress-default-static-files  
+  namespace: ingress-default   
+  labels:  
+    app: ingress-default   
+data:  
+  index.html: |  
+    <!doctype html>  
+    <html>  
+      <head>  
+        <meta charset="utf-8">  
+        <title>Cluster Ingress Index</title>  
+        <link rel="stylesheet" href="main.css">  
+      </head>  
+      <body>  
+        <table class="class1">  
+          <tr>  
+            <td class="class2">Kubernetes Platform</td>  
+          </tr>  
+          <tr>  
+            <td class="class1">  
+              <table class="class3">  
+                <tr><td><h1>Cluster Ingress Index</h1></td></tr>  
+              </table>  
+            </td>  
+          </tr>  
+          <tr>  
+            <td>  
+              <table class="class3">  
+                <tr>  
+                <td>  
+                   <h2>The following are links to this cluster's ingress resources:</h2>  
+                  </td>  
+                </tr>  
+                <tr>  
+                <td class="class4">  
+                    <a href="https://<ROOT_INGRESS_PATH>" target="_blank">Root Ingress</a><br/>  
+                    <a href="https://<OTHER_INGRESS_PATH>" target="_blank">Other Ingress</a><br/>   
+                 </td>  
+               </tr>  
+              </table>  
+            </td>  
+          </tr>  
+         </table>  
+      </body>  
+    </html>  
+  main.css: |  
+    body {  
+      background-color: rgb(224,224,224);  
+      font-family: Verdana, Arial, Helvetica, sans-serif;  
+      font-size: 100%;  
+    }  
+    .class1 {  
+  ... 
+    }  
+    .class2 {  
+  ... 
+    }  
+    .class3 {  
+  ... 
+    }  
+    .class4 {  
+     ...
+    }   
+---  
+apiVersion: apps/v1  
+kind: Deployment  
+metadata:  
+  labels:  
+    app: ingress-default   
+  name: ingress-default  
+  namespace: ingress-default 
+spec:  
+  selector:  
+    matchLabels:  
+      app: ingress-default  
+  replicas: 1  
+  template:  
+    metadata:  
+      labels:  
+        app: ingress-default    
+      name: ingress-default  
+    spec:  
+      containers:  
+        - name: ingress-default  
+          image: <IMAGE_REGISTRY_REPO_TAG>  
+          imagePullPolicy: Always  
+          resources:  
+            limits:  
+              cpu: 100m  
+              memory: 10Mi  
+            requests:  
+              cpu: 100m  
+              memory: 10Mi  
+          volumeMounts:  
+            - readOnly: true  
+              mountPath: html  
+              name: html-files  
+      volumes:  
+        - name: html-files  
+          configMap:  
+            name: ingress-default-static-files  
+---  
+kind: Service  
+apiVersion: v1  
+metadata:  
+  name: ingress-default  
+  namespace: ingress-default  
+  labels:  
+    app: ingress-default  
+spec:  
+  selector:  
+    app: ingress-default  
+  ports:  
+  - name: http  
+    protocol: TCP  
+    port: 80  
+    targetPort: 8080  
+---  
+apiVersion: extensions/v1beta1  
+kind: Ingress  
+metadata:  
+  name: default-ingress  
+  namespace: ingress-default  
+  annotations:   
+    nginx.ingress.kubernetes.io/rewrite-target: /  
+    kubernetes.io/ingress.class: "nginx"    
+  labels:  
+    app: ingress-default  
+spec:  
+  rules:  
+  - http:  
+      paths:  
+      - path: /  
+        backend:  
+          serviceName: ingress-default  
+          servicePort: 80
+As you can see in the YAML, the ingress-default-static-files configmap contains the contents of the index.html and main.css files. By either editing or replacing this configmap, we can change these files served by the Golang file server app.
+Using ConfigMaps as Volumes
+In the world of Docker and Kubernetes, volumes are used to solve two problems:
+The need for persistent file systems.
+The need to share file systems between containers.
+For our solution, we map volumes in our deployed containers to the configmap resource. In the snippet below, the html-files volume is configured to possibly be used by all containers in the pod. The volume maps to the data configured in the ingress-default-static-files configmap.
+...volumes:  
+     - name: html-files  
+       configMap:  
+         name: ingress-default-static-files...
+Once the volume is configured at the pod-level, we configure a volume mount at the container-level. This volume mount maps to the html-files volume, configured in the pod. With this mapping, the application container will now have access to the two files in the configmap — html/index.html and html/main.css.
+...volumeMounts:  
+     - readOnly: true  
+       mountPath: html  
+       name: html-files
+When the Golang application is launched in the Kubernetes cluster, the ingress-default ingress rule causes an upstream rule to be configured in the NGINX ingress controller. The resulting path will connect the edge of the cluster, through the NGINX ingress controller, to the ingress-default service. This service points to the Golang file server app pod. When running, this serves the default web app on the root path of the ingress controller. If there ever is a need to change this web page, we just need to edit/replace the configmap resource.
+Conclusion
+A key benefit of Container Orchestration is the promise to remove the “undifferentiated heavy-lifting” that would be needed to provision and manage multiple containerized workloads. Efficiency and velocity of application deployments and cluster state changes are improved by using Kubernetes declarative configuration features, like the ConfigMap. By using ConfigMap resources as mounted volumes, with running containers, configuration and content can be abstracted from the containers, thereby reducing the need for image refactoring and container redeployments.
