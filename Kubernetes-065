@@ -1,0 +1,50 @@
+Kubernetes
+As a company, we have always looked to push the envelope by innovating on behalf of our users. That has led to multiple industry-first initiatives. Since our inception in 2012, we’ve worked to bring delightful experiences built on the back of a very strong foundation. One such element is how we look at cloud auto-scaling. Since 2016, cloud auto-scaling proved to be an effective tool for us and we wanted to elevate it further. After years of running deployments on AWS EC2 and Google Compute Engine, we came to the conclusion that containers are the deployment format for the future.
+Keeping this in mind, we chose to migrate our infrastructure services from the existing CI/CD (running on GCE + ILB / GLB using Chef) pipeline to entirely on the containerized based CI/CD pipeline. We moved to use the docker to build and run the containers and Kubernetes as an orchestration service.
+Why we decided to adopt Kubernetes
+The main motivation behind going for containerized based pipelines was to break out traditional Dev versus Ops silos.
+We were looking for a platform that bundled and ran applications while simplifying the management of services of scale and stability. When scaling became critical, we often suffered through several minutes of waiting for new VM instances to come online. The idea of containers scheduling and serving traffic within seconds as opposed to minutes was exciting to us.
+Infrastructure as YAML
+One of the big shifts with Kubernetes has been the move from infrastructure as code towards infrastructure as data — specifically, as YAML. All the resources in Kubernetes that include Pods, Configurations, Deployments, Volumes, etc., can simply be expressed in a YAML file.
+Extensibility
+Kubernetes is very extensible. There are a set of existing resources like Pods, Deployments, StatefulSets, Secrets, ConfigMaps, HPA, etc. However, we can add more resources in the form of Custom Resource Definitions.
+Powerful Orchestration Tool
+Containers have become the modern way of packaging and distributing an application and its dependencies so that it can run anywhere (development workstation, test environment, production) ideally without any changes. Kubernetes orchestration supports resilience, robust, and fast deployment management.
+How did we do it
+Starting in July 2019, we started evaluating Kubernetes in our infrastructure. We worked our way through various stages of the POC and load test efforts. We started by containerizing all of our services and deploying them to Kubernetes hosted staging environment.
+Beginning in February 2020, we began to methodically migrate microservices to Kubernetes in production. In this COVID-19 pandemic lockdown, we successfully migrated 100+ services to Kubernetes so far with zero downtime. All these services include standalone java asynchronous messaging services, legacy thrift services, and legacy HTTP services.
+Lift and Shift Application Services Strategy
+We used a controlled lift-and-shift approach to migrate targeted services workloads to Kubernetes.
+
+K8 Pipeline
+Tools
+It was important to select tools that were low Maintenance, Scalable, Reliable, and Flexible. Hence we selected:
+GKE: Google Kubernetes Engine is a managed, production-ready environment for running containerized applications.
+Jenkins: An extensible automation server used as a CI server.
+Spinnaker: A continuous delivery tool.
+Prometheus: To monitor highly dynamic container environments.
+Grafana: For visualizing Kubernetes deployments through customizable dashboards.
+FluentBit: A DaemonSet for pods centralized logging.
+Statsd: A DaemonSet for aggregate and summarize application metrics.
+
+Spinnaker Deployment
+Blue-Green Deployments
+A blue-green deployment is one without any downtime. In contrast to rolling updates, a blue-green deployment works by starting a cluster of replicas running the new version while all the old replicas are still serving all the live requests. Once when the new set of replicas is completely up and running the load-balancer configuration changed to switch the load to the new version.
+
+A benefit of this approach is that there’s always only one version of the application running, reducing the complexity of handling multiple concurrent versions. If something unexpected happens with the new version on Green, we can immediately roll back to the last version by switching back to Blue.
+The Outcome
+Kubernetes benefits are undeniable in terms of Scale, Speed, and Immutable infra.
+Faster deployment times:
+Improved our CI/CD pipeline from 3 minutes per deployment to 45 seconds per deployment.
+Managed CI/CD:
+Better management through modularity. Redefined the way we package, distribute, deploy, and manage applications now.
+Reduce infrastructure cost:
+Kubernetes has reduced our infrastructure costs significantly for the migrated services. Now we use 30–40 percent less CPU per day.
+Reduction of administration and operations burden:
+Less human intervention for integration and delivery thereby supercharging the productivity of the developers and allowing them to stay focused.
+Next-Steps
+Kubernetes proved to be an effective platform for us and we knew we could do more with it.
+As a next step, we are working on more ways towards followings:
+Ingress deployment: Migrate all 150+ URL paths of HTTP(s) services to the Kubernetes
+Migrate MQTT (Message Queuing Telemetry Transport) services to the Kubernetes.
+Canary deployment approach over to Blue/Green deployment.
