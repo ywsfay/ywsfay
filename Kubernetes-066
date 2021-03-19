@@ -1,0 +1,97 @@
+Smart Developers Don’t Code
+Something has stuck in my head from a long time ago, when I was a young junior developer. I was working on a part of an application trying to speed up the access to data in a web app. The first iteration of code called out to a database every time a user paged through the data. Looking to optimise I decided to cache the original returned data so as not to keep on round tripping back to the database. A sensible thing to do.
+So head down I spent days coming up with something that would be the best caching Java code anyone had ever seen! I came up with complex algorithms to call, store, page and evict data for this one use case.
+After 5 days and nights of coding toil, I proudly met my lead developer and walked him through my code. I bamboozled him with the brilliance of the algorithms.
+Confusingly, I was met with, not the congratulatory realisation of seeing revolutionary data paging techniques, but instead with a large sigh and a promise to review.
+The next day, the lead dev called me over and said. “I don’t know what you have done, but I have removed all of your code and just stored the data in a list which gets refreshed on each new search”
+He first told me that my code was massively over engineered, and secondly was just doing something that there were patterns and tools to solve the same problem.
+Tail between my legs, I accepted this and took one of my biggest lessons as a junior developer, with a metaphoric thwack to the back of the head!
+One of my earliest lessons in software engineering — Don’t immediately code your way out of a problem!
+
+This brings me to a recent conversation I had with a young developer who presented me with a problem with his use of code in Red Hat OpenShift (Disclaimer: I work at Red Hat). On getting the full details, he explained that he had written lots of microservices to sit in front of a bunch of APIs that read data from various sources and manipulated the data depending on the source before sending out to various endpoints. He was very proud of the set of microservices that he’d built to solve this problem. There were aggregators, translators and other patterns.
+I listened and sighed.
+I told him that the solution was really complex and seemed a little overengineered! In a polite way, I told him that folks had solved all of these problems and more, many times over. In this instance I pointed him towards Apache Camel and told him that just because you are building microservices it does not mean that you need to build microservices!
+Just because you are building microservices it does not mean that you need to build microservices!
+In IT we seem to think that we need to re-invent everything, always. I’m all for exciting new paradigms that change the way we use technology, but not at the expense of throwing things away.
+
+Apache Camel is one of many great examples of not re-inventing things!
+I am a huge Apache Camel fan, from both an integrators viewpoint and also a great open source community success. The story goes that Camel was based on a conversation between Gregor Hophe and James Strachan. Gregor wrote the integration bible Enterprise Integration Patterns, a book that gives you the designs for common integration tasks as a set of patterns…you know, so you don’t need to reinvent the same architecture patterns.
+James, an open source developer and the founder of Groovy (the language) and Gregor were talking at a conference and James thought it would be a cracking idea to build reusable Java implementations of these patterns… you know, so that you don’t have to keep on writing the same code when you need to do stuff! Apache Camel was born from this conversation as a set of libraries that implement integration patterns.
+Back to my recent conversation!
+So, we took a look at Red Hat Integration, which is Apache Camel plus a bunch of other stuff to deploy and run integration services. I told him that not only can he do everything that he needed, but it also fitted in with his microservices architecture and looking at some of the shiny new pieces like Camel K he can also have his microservices served…err, serverless!
+Serverless Integration Microservices!!
+Camel K is the most exciting thing in integration right now. Some of the biggest challenges facing integration specialists were always around how to achieve scale and availability with integration solution architectures. Tools like CamelK and OpenShift are taking care of the whole deploy, run & scale aspects of that problem.
+Apache Camel provides the implementations of patterns and hundreds of adapters. The things that needed expertise was in figuring out which connectors and patterns to use and importantly in how the components are deployed in a scalable and available architecture to support requirements.
+Projects like CamelK are a new breed of “kubernetes native” tools that look to use the power of Kubernetes to take advantage of the huge scale and availability capabilities of the Kubernetes platform. Some of the difficult things in defining and designing scale and availability have already been done by using the power of the Kubernetes platform…you know, so that I don’t need to re-invent scaling and availability!
+What is Apache Camel?
+Ok just a quick one, if you have not looked at Apache Camel before then it’s an awesome thing of beauty that makes it really simple to connect and integrate hundreds of different things.
+Here’s a very quick look at Apache Camel.
+It provides implementations of over 60 integration patterns
+It has over 350 connectors
+It’s awesome
+Here’s the basic premise of all camel integrations. Data or invocation comes FROM a source somewhere which flows into a PROCESSOR to do something and then flows TO a destination.
+
+The FROM and TO are Camel components or adapters to connect technologies from AWS native services through to CSV files to SAP to reactive streams to Kafka connectors… there are over 350 of these!
+It is as simple as that!
+A story I tell is that Camel components are a brilliant way of showing the power of open source software communities and projects. I’ve been a huge fan of Camel for many years and have seen the number of components grow with every release.
+That is the power of Open Source!
+What happens is that a developer uses Camel, but the component that the developer needs doesn’t yet exist in Camel. So, the developer builds the component to solve their needs. Being a good Open Source citizen, the developer delights the Camel community by contributing that component back into the Camel source and it’s included into the next Camel release. Now, when you need that component, you don’t have to build it, because it’s already been done… awesome!
+There are tons of resources around to help you out with Camel, one of the best ones is Claus Ibson and Jonathan Anstey’s book, Camel in Action which has to be the bible of Camel. James Strachan has often said that he invented Camel but Claus made it work! Also take a look at Tom Donohue’s brilliant articles on Camel
+But what about Camel K!
+Ok, I’m going to quickly show you something awesome (ok to an old integration hack like me it’s awesome!).
+I’m going to do a fairly simple integration task in just a few lines of code.
+I am going to create a Telegram bot to deliver a complement into a telegram channel. Now Telegram has a load of API’s that I can use to call and send messages to channels which I could use.
+There’s also a compliment service that Grant Codes has made available at https://complimentr.com/ which returns compliments to make you feel good :)
+
+Wow, amazing colour schemes Grant!
+Now I want to integrate these two services together to deliver nice compliments to my Telegram friends.
+So, am I going to dive into code?
+Hell no. A quick look at the Apache Camel connectors shows me that amongst the 350 or so different components I can connect to I find Camel Telegram, someone who wanted to talk to Telegram has already written something to connect so that I DON’T HAVE TO!
+Some usual Camel components will help with the plain HTTP call to the compliment service, I say usual in a flippant way as actually there’s an HTTP component that handles all of the things that I might have coded but I DON’T NEED TO!
+So, I am going to use the Camel Telegram component, to receive messages from the bot, calling out to an external service to get a compliment and then sending it back to the Telegram bot. OK, not the most exciting thing but a bit of fun
+Here’s what I want the bot to do, send a name and receive back a compliment.
+
+I have a kubernetes cluster available to me so I am going to do this with CamelK. I’m using Red Hat OpenShift and the CamelK operator to set things up.
+Here’s what I need to do.
+1 — Download the CamelK CLI.
+2 — Install the CamelK Operator
+3 — Run my code
+Download the CamelK CLI
+So, there’s a good deal of articles and docs out there explaining this so I won’t go into a heap of detail but the CamelK CLI (or kamel) is essentially how you interact with your Kubernetes platform (or more accurately, the Camel K custom resources on the platform) to deploy integrations (there’s also IDE plugins for VSCode).
+The CLI enables you to do things like install the Camel K operators, run integrations in interactive dev mode (live updates of running integration code) etc.
+Install the CamelK Operator
+CamelK has a number of Kubernetes Operators to build, deploy and run integrations. The whole point of Kubernetes Operators is to abstract the complexities of things running on the platform and CamelK does this superbly! So just go ahead and install the operator either from the CLI
+command line using :
+
+Or if you are running in Openshift then you can use the Operators tab to install.
+
+Run my code
+Once installed I can now push integration code to my running OpenShift platform from an IDE or CLI.
+So, let’s look at the code. Remember, I am using the Telegram component. Looking at the component I just need to grab the Telegram authorisation token and pass that into the component, which will read messages from the bot.
+from(“telegram:bots?authorizationToken=[YOUR TOKEN]”)
+If I add a simple log to see the route working
+from(“telegram:bots?authorizationToken=[YOUR TOKEN]”)
+.to(“log:bots”)
+I have two lines of code. If I save these in a file called hello.groovy then I have a groovy script that can be used as a CamelK integration that will connect to my telegram bot and will log whatever I type!
+Running hello.groovy
+This is the awesome bit. I want my two line groovy script to deploy and run as a scalable integration component. This is what Camel K is! From my command line I simply run:
+
+With the run command I have turned my two line groovy script into a container deployed and running as an Apache Camel route on my OpenShift cluster.
+What is the — dev flag?
+Adding the — dev flag, I have entered a weird world where I can make changes to my hello.groovy file which will automatically be reflected in the OpenShift cluster! Making my dev experience much easier.
+The full bot
+You have seen how awesome CamelK is, then here’s the rest of my “avoiding code” groovy script.
+from(“telegram:bots?authorizationToken=[YOUR TOKEN]”)
+.setHeader(“USER”, body())
+.to(“https://complimentr.com/api?asGET=true “)
+.transform().jsonpath(“\$.compliment”)
+.setBody(simple("\${body} \${in.header.USER}”))
+.to(“telegram:bots?authorizationToken=[YOUR TOKEN]”)
+I use the Camel Telegram component to receive the message from the Telegram channel
+Stash the name as a header sent through in the telegram message body
+Call out to the compliment api
+Add the original name to the compliment
+Push the compliment back to the Telegram channel.
+There you go six lines of code to do an integration by re-using components to do the job.
+There’s some really brilliant Camel integration patterns like aggregators, brokering, dynamic routing and even more awesome CamelK things like serverless, scale to zero on demand capabilities that will all help you not code!
+Smart developers not coding is not new, it’s been around for a long time. The reasons why we build frameworks and tools is to abstract the mundane and be more productive. Sometimes it’s a case of understanding what frameworks and tools are available to help you with not coding. Hopefully I have shown you another one of these!
