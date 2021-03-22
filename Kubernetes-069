@@ -1,0 +1,128 @@
+五分鐘 Kubernetes 有感
+下半年最有趣莫過於 K8S 的認識，台灣社群也蹦出好多相關的活動，除了 K8S day 之外也有 Kubernetes 101 — 半小時理解 Pokemon 背後的開源容器技術 一連好幾天有大神分享的活動，激起我想要了解架構層的興趣，本篇主要是學習過程紀錄。
+Kubernetes
+
+Learn the Kubernetes Key Concepts in 10 Minutes (Link)
+左架構圖雖然乍看複雜，但其實中只要認識其中幾個基本的元件：
+Cluster：由紫色 Master 來管理底下橘色的 Node。
+Pod：對 Container 再一次封裝，之後如果要 Scale，就會自動新增刪減 Pod，是 Immutable deploy 的最小單位。
+Service：Pod 運行後需要透過定義 Service 才能讓外部的使用者訪問。
+Install
+學習上最快速方便的方法是，直接在本機端安裝單機版 Minikube Cluster ，因其安裝在 VituralBox 內任你盡情把玩。安裝 kubectl 工具稍後能進行簡易的 K8S API 操作。接著，透過 start 將 Cluster 於背景運行就能看到 Dashboard 介面：
+# Install virtualbox https://www.virtualbox.org/wiki/Downloads
+$ brew cask install minikube
+$ brew install kubectl
+$ minikube start
+$ minikube dashboard
+
+K8S Dashboard GUI
+部署 Docker Image
+可以選擇從 Dockerhub 下載 Image 到你的 Cluster 中，這邊使用筆者一個 Side Project Docker Image 來示範，最後會看到 Deployment / Pod 列表多了個運行中的項目：
+$ kubectl run medium-api \
+  --image=evenchange4/micro-medium-api:latest \
+  --port=3000
+$ kubectl get deployments
+$ kubectl get pods -o wide
+
+Run docker image
+揭露 Service
+Pod 中的 Container 雖然已經運行了，但外部的使用者並不能訪問到，因此接下來要 Expose Service。透過 Minikube 的指令能方便查詢 VitrualBox 的 IP 以及 Service ，最後會自動打開瀏覽器頁面，下右側圖即為 Side Project 的頁面，能夠透過 GraphQL 查詢 Medium 的文章列表，有興趣可以參考 GraphQL Microservice with Apollo：
+$ kubectl expose deployment medium-api --type=LoadBalancer
+$ kubectl get service
+$ minikube service medium-api
+
+
+Expose service
+Scale
+雖然單機版環境只有一個 Node，依然可以模擬如果要 Scale 成兩個單位的 Pod，可以透過 replicas 參數來配置。一旦設定完畢，K8S 就會幫你自動新增一個 Pod，又或是自動把多餘的 Pod 關閉，因此不必自己擔心 Pod 的 Lifecycle：
+$ kubectl scale deployment/medium-api --replicas=2
+$ kubectl get pods -o wide
+
+Scale Pods
+Rolling 版本更新
+Container 是基於 Docker Image 的 Tag 做控制，所以可以透過指定 Tag 來達到 Rollout 機制，例如這邊把原先吃 Latest Tag 降版為 2.1.0，也可以透過 undo 來達到 Rollback 效果：
+$ kubectl set image deployments/medium-api \
+  medium-api=evenchange4/micro-medium-api:2.1.0
+$ kubectl rollout status deployments/medium-api
+$ kubectl rollout undo deployments/medium-api
+
+Rollout and Rollback
+其他指令
+當然還有其他很豐富的用法，例如追蹤 Log、到 Pod 內進行 Debug 等等，特別推薦 Oh-my-zsh 使用者安裝方便的 Autocompletion Plugin：
+# Logs
+$ kubectl logs --follow <POD-NAME>
+
+# Execute Commands
+$ kubectl exec <POD-NAME> -it -- ls
+
+# Kill
+$ kubectl delete service medium-api
+$ kubectl delete deployment medium-api
+$ minikube stop
+# zsh pulgin
+# plugins=(kubectl)
+Cofiguration file
+到這邊你可能會覺得想要部署服務，還要透過上述的指令一一操作未免太麻煩，所以 kubectl 其實能使用定義好的 YAML 格式檔來執行指令。例如這邊先匯出之前操作的 Expose Service 動作，並嘗試重新使用 service.yaml 來建立 Service：
+$ kubectl get services medium-api -o yaml > ./service.yaml
+$ kubectl create -f ./service.yaml
+雖然可以透過單一 YAML 檔案來取代繁複的 Commands，但是 YAML 檔案要怎麼生出來呢？大部分情況是需要手動去進行撰寫配置的。緊接著又冒出另一個問題，如果我要更新一個新的版號，是不是就得產生一份新的 YAML 檔？
+所以，我們需要透過 Helm 來幫忙把整個服務的配置 Pre-Cofiguration，並且把盡量把 YAML 檔案定義出 Template，如此一來就能重複地使用同一份設定配置了。
+Helm & Chart
+
+https://helm.sh/
+Helm 等同於前端開發常用的 Npm，只不過安裝的東西不是套件而是一個運行服務，而 K8S 這邊把整包服務稱作 Chart，事實上類似 package.json 定義出 Chart.yaml 來描述系統的架構。
+Install and setup
+Helm 主要分為 CLI Client 與 Tiller Server ，可以透過 init 指令會幫你在 Cluster 中快速地建立環境與配置：
+$ brew install kubernetes-helm
+$ helm init
+Use a Chart
+當然，我可以一鍵安裝別人提供的 Chart，例如我要在 Cluster 建置一個 Wordpress Chart 是什麼感覺呢？官方的 Chart Repository KubeApps 有一個 Wordpress 的穩定版可以下載使用：
+$ helm install stable/wordpress
+打完下班。可以看到下左圖 Wordpress Chart 運行了兩個 Service，分別為 Mariadb 以及 Wordpress Server，右圖為跑起來的頁面。
+
+
+Install Wordpress Chart via Helm
+但是多半時候可能想要設定一些參數做客製化，Wordpress Chart 就有提供後台相關的變數供設定，透過 set 參數來進行覆寫，又或是直接透過 values.yaml 來一次給定所有的參數，詳情可以參考 Wordpress Configuration。
+$ helm install \
+  --name my-release \
+  --set wordpressUsername=admin \
+  stable/wordpress
+# or
+$ helm install \
+  --name my-release \
+  -f values.yaml \
+  stable/wordpress
+Define your Chart
+Helm 提供快速 create Chart 的指令， 並且可以透過 --dry-run --debug 來預先瀏覽產出的設定是不是你想要的，確認後才真正的執行安裝：
+$ helm create mcs-lite-chart
+$ helm install . --dry-run --debug
+$ helm install . --name mcs-lite-chart
+
+
+MCS Lite Chart 中定義的 Resouces
+可以看到上右圖 Create Chart 指令所建立出來的資料夾，真的就是幾個 YAML File 所組成的，因此提供一個很好的格式化管理方式，也可以用 Helm Linter 檢測，複雜的系統肯定要花更多功夫設計這份 Template！
+如果你想要了解 Chart Template 的每個元件，建議可以跑過 The missing CI/CD Kubernetes component: Helm package manager，慢慢地一步驟一步驟跟著學習。
+Deployment Version Control
+使用 Helm 管理 Chart 除了可以參數化 K8S 設定檔外，另外一個重點是版本控管。上版的時候可以用 upgrade 重新部署 Chart，有點類似 kubectl rollout 的機制，但是這邊是整個系統 Deployment 層級的版本控管，因此也可以隨時 rollback 回到上一次的版本：
+$ helm ls
+$ helm upgrade mcs-lite-app .
+$ helm rollback mcs-lite-app 1
+
+Helm Chart list
+最後你可以自架 Helm Repository 提供你的 Chart.yaml，也可以透過 package 指令打包目前的 Chart 資料夾，進而交付給使用者去下載安裝：
+$ helm package . --debug -d ./charts
+$ helm install ./charts/mcs-lite-chart-0.1.0.tgz
+
+Pack helm chart (GitHub Link)
+後記
+前陣子在玩 Zeit 的 Now.sh，發現跟 K8S 的指令非常相像，感覺背後應該也是 K8S 的技術。架構這種東西很燒腦也很好玩，如果流程建置的很完善，身為前端工程師平常應該是不會碰觸，但為了避免錯誤的想像，自己玩過會比較有感一點。我覺得十分鐘系列的懶人版對於想了解但不需要自己操作的人很有幫助，因此稍微紀錄一下順便與前端團隊分享。
+Further Readings
+Microservice 產品交付 — Dockerize 與 Zeit JavaScript 跨平台解決方案
+GraphQL Microservice with Apollo — 使用 GraphQL 獲取 Medium 最新文章列表
+References
+The missing CI/CD Kubernetes component: Helm package manager
+Using Helm to deploy to Kubernetes
+Helm Quickstart Guide
+十分钟带你理解 Kubernetes 核心概
+Kubernetes basics / Hello minikube
+https://github.com/kubernetes/charts/tree/master/stable/wordpress
