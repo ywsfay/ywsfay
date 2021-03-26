@@ -1,0 +1,64 @@
+Kubernetes nedir?
+Kubernetes Google tarafından GO dilinde geliştirilmiş Cloud Native Computing Foundation tarafından desteklenen mevcut konteyner haline getirilmiş uygulamalarınızı otomatik deploy etmek, sayılarını arttırıp azaltmak gibi işlemler ile birlikte yönetmenizi sağlayan bir Konteyner kümeleme (container cluster) aracıdır.Kubernetes projesi ilk olarak 2014 yılında paylaşıma açıldı ve şuan ki en son veriyonu 1.20’dir. Aşağıdaki linkten github adresine ulaşabilirsiniz.
+kubernetes/kubernetes
+Production-Grade Container Scheduling and Management - kubernetes/kubernetes
+github.com
+
+Bulut teknolojilerinin kullanımının yaygınlaşması ile birlikte konteyner kavramı hayatımıza girdi ve önemli hale gelmeye başladı.Bundan üç yada dört sene önce sanal makine devrimini konuşuyorken artık sanal makinelerin üzerinde koşan kontainer devrimini konuşuyoruz.Ve ilerleyen zamanlarda da serverless teknolojisini konuşuyor olacağız.
+
+Sanal Sunucu Mimarisi ve Docker Mimarisi
+Bu teknolojiyi kullanarak uygulamalarımızı mikroservis mimarisi aracılığıyla daha kolay yönetebilir , daha kolay sorunlarımıza çözüm bulabilir ve daha da önemlisi taşınabilir bir ortam sağladığı için uygulamalarımızı çok kolay bir şekilde taşıyabiliriz.Sürüm geçişlerini de bu sayede kolay bir şekilde yapabiliriz.Bu özellikler aslında docker dediğimiz uygulama ile olmaktadır.Docker, dünyada en yaygın olarak kullanılan konteyner teknolojisidir.Aslında Docker, Linux Kernel’e 2008 yılında eklenen Linux Containers (LXC) üzerine kurulu bir teknolojidir.Çok yeni bir teknoloji değil :) Docker, LXC’nin zengin mirasının üzerine oturmuştur fakat LXC’de manuel olarak yapılan işlemleri ustaca paketleyerek standart hale getirmiştir.Google bu teknolojiyi yıllardır kullandığını belirtiyor.Belki de bizim bilmediğimiz bir teknolojiyi şu an kullanmakta kimbilir.Bu teknolojinin hayatımıza girmesiyle birlikte bir çok ihtiyaç da ortaya çıkmıştır.
+Örneğin;
+Konteyner çöktüğü zaman nasıl tekrar ayağa kaldırabilirim?
+CPU dar boğazına takıldığımda nasıl daha çok konteyner ayağa kaldırabilir yada CPU belli bir seviye altında çalışmaya başladığında nasıl kullanılmayan konteyner’ları silebilirim?
+Aslında genel olarak yönetim işlemlerinin daha kolay şekilde yapılmasına ihtiyaç duyulmuştur.Kubernetes, aslında bu ihtiyaçlar sonrasında ortaya çıkmıştır. Operasyonel işi zor ve maliyetli olan scaling, rollback, auto deployment, service discovery vb. gibi pek çok işlemi daha kolay bir şekilde yapmamızı sağlar. Bu sayade bir çok operasyonel işlemi tek bir elden yönetebilme imkanı sağlamaktadır.Birden fazla yönetim aracı vardır.Docker bu ihtiyaçlar için Docker Swarm ‘ı ortaya çıkarmıştır. Onun dışında Apache Mesos vardır.Mesos, C++ dilinde ilk olarak Berkeley altında geliştirilen ve şu an Apache Foundation altında açık kaynak koda sahip olan projedir.Fakat Google, Kubernetes ‘ı duyurunca piyasada önemli bir yer edinmiştir.Belki bu karşılaştırmayı başka bir yazıda yazabiliriz.
+Kubernetes’in yapısına göz atacak olursak master ve worker dedikleri node’lardan oluşuyor. Bu worker dediğimiz node’lar içerisinde pod’lar ve pod’ların içerisinde konteyner’larımız bulunmaktadır.Bu yapı kendi içinde overlay dediğimiz bir network ile haberleşiyor.
+
+Kubernetes Yapısı
+Master node içerisinde 4 tane temel yapıtaşı vardır.
+Bunlar;
+API Server
+Controller Manager
+Scheduler
+Etcd
+API Server:Master sunucumuza gelen tüm REST requestlerin yönetilmesinden sorumludur.Aslınsa Cluster’ın beyni diyebiliriz.Json file’ları ile yönetilir.
+Controller Manager:Temel olarak, bir denetleyicidir, kümenin durumunu API Server izleme özelliğiyle izler ve bildirildiğinde, geçerli durumu istenen duruma doğru hareket ettirmek için gerekli değişiklikleri yapar.
+Scheduler: Bir pod’un hangi node üzerinde çalışacağına karar verir , kubelet’i tetikler ve ilgili pod ve içindeki konteyner oluşturulur.Kısacası yeni bir pod oluşturulması isteğine karşı API server’ı izler.
+Etcd: Coreos tarafında yaratılmış open source distributed,tutarlı ve izlenebilir bir key value store (nosql database) diyebiliriz.Redhat Coreos ‘si satın aldı aslında konteyner teknolojisinde çok güzel hamleler atıyor.
+Şimdi de kubernetes node’larının yapıtaşlarına bakalım.
+Kubelet
+Kube-Proxy
+Pod
+Container Engine
+Kubelet:Node üzerindeki ana kubernetes ajanıdır.API server’dan gelecek isteklere karşı API Server’ı izler.İlgili docker servisi ile konuşarak Pod’u ayağa kaldırır ve bunun bilgisini API Server’a iletir.
+Kube-Proxy: Kubernetes network’u diyebiliriz.Pod’lara IP adresi proxy sayesinde atanır.Bir pod’un içindeki tüm konteyner’lar bir adet paylaşımlı IP ‘yi kullanır.Kube-proxy aynı zamanda bir servisin altındaki tüm pod’lara load-balance özelliği kazandırır.
+Container Engine:Konteyner yönetimini yapar.İmage’ları ilgili registry üzerinden çeker ve konteyner’ların start ve stop olmalarını sağlar.
+
+Pod
+Pod:Konteyner ‘ların çalışma alanı diyebilir.Bir pod içerisinde birden fazla konteyner çalışabilir.Kubernetes tarafında çalışma şekli gereği yeni bir deploy isteği geldiğinde pod’un yeni versiyonu oluşturulur ve çalıştığı görüldüğünde diğer pod versiyonu kapatılır.Dolayısıyla pod içerisinde birden fazla konteyner olduğu durumda diğer uygulamala konteyner’ları etkileneceğinden bir pod içerisinde bir konteyner tavsiye edilir.Pod öldüğünde tekrar geri kalkmaz aynı imajdan onun yerine yeni bir pod ortaya çıkar.Yandaki resime baktığınızda kafanızda daha iyi şekillenebilir.
+Bunun yanında bazı terimler var onları da aşağıda açıklamaya çalıştım.
+
+ReplicaSet
+ReplicaSet: Bir poddan kaç tane olacağını replicaset ile belirtiyoruz.İstediğiniz anda bir pod’u kesintisiz bir şekilde scale edebilir yada azaltabiliriz.
+Namespace: Namespace girerek aslında ortamlarımızı birbirinden izole edebiliyoruz.
+Service: Service, pod’ların ön tarafında konumlanan ve gelen istekleri karşılayıp arka tarafa pod’lara gönderen katman. Blue-green deployment, pod scaling gibi işlemleri service sayesinde kesintisiz olarak yapabiliyoruz.
+Secret: Parola, kullanıcı, token gibi bilgileri güvenli bir şekilde depolayacağınız alan secret’tır. Burada depoladığımız bilgilere verdiğimiz isimle uygulamamız içinde kullanabiliriz.Şifre yazarak değil de aslında öncesinde yarattığımız secret ile uygulamayı yönetiyoruz.
+Kubernetes Çalışma Şekli
+
+Kubectl(kubernetes client) isteği API server ‘a iletir.
+API Server isteği kontrol eder etcd ‘ye yazar.
+etcd yazdığına dair bilgilendirmeyi API Server’a iletir.
+API Server ,yeni pod yaratılacağına dair isteği Scheduler ‘a iletir.
+Scheduler, pod ‘un hangi server’da çalışacağına karar verir ve bunun bilgisini API Server’a iletir.
+API Server bunu etcd ye yazar
+etcd yazdığına dair bilgiyi API Server’a iletir.
+API Server ilgili node’daki kubelet’i bilgilendirir
+Kubelet,Docker servisi ile ilgili docker soketi üzerindeki API’yi kullanarak konuşur ve konteyner’ı yaratır.
+Kubelet ,pod’un yaratıldığını ve pod durumunu API Server’a iletir.
+API Server pod’un yeni durumunu etcd’ye yazar.
+Kısaca ve basitçe Kubernetes ‘i ,yapı taşlarını ve çalışma mantığını bildiğim kadarıyla açıklamaya çalıştım.Umarım faydalı olmuştur.Diğer yanda konteyner teknolojisini, bulut teknolojilerinde lider servis sağlayıcıları servis olarak sunmaktadır.
+Amazon Elastic Container Service (Amazon ECS) ==> AWS
+Azure Kubernetes Service(AKS)==> AZURE
+Google Kubernetes Service ==> Google Cloud Platform
+Bir sonraki yazımda Openshift üzerine bir makale yayınlayacağım.Openshift aslında Kubernetes’in eksik yanlarını kapamış ve üstüne support vs katma değer servislerini kullanıcıya sunmuş bir Redhat ürünüdür.Halihazırda bir çok firma production ortamlarında Openshift’i kullanmaktadır.
+Kubernetes’in resmi sertifikası Certificate Kubernetes Administrator(CKA) sınav rehberine ulaşmak için alttaki makalemi okuyabilirsiniz.
