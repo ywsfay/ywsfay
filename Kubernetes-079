@@ -1,0 +1,38 @@
+Bare Metal K8s Clustering at Chick-fil-A Scale
+At full scale Chick-fil-A will be running Kubernetes at the Edge in each of our 2000 restaurants. That means roughly 6000 devices at the Edge running Kubernetes.
+One of the biggest challenges associated with this is bare metal clustering on-the-fly, in-restaurant.
+While most Kubernetes deployments are in the cloud or benefit from skilled technicians that are physically located near their deployments (or at least equipped with remote access), our deployments are completed by installers who focus only on initial hardware installations. They never connect to the compute devices directly — rather they connect ethernet and power cords, and then look at an app to check the status of the cluster as it self-bootstraps. Replacements are completed by restaurant Owner/Operators or their teams, which are sometimes less technical.
+On top of that, our Edge deployments are not exactly in a “datacenter environment”.
+
+Edge Compute hardware and a typical installation
+Clustering: Options we considered
+To solve this clustering challenge, we surveyed the landscape and considered several options:
+Kubespray — we started with the Ansible based Kubespray but found it to be fairly brittle. When things went well we got a cluster. When they didn’t, we created a brick that was hard to transform back into a computer. We also found that the process to initiate clusters was very slow, often taking as much as 30 minutes on our hardware stack. While we are loathe to discredit the project long-term as a result, this was enough for us to move in a different direction.
+Openshift — it can create K8s clusters, but we didn’t like the idea of being closely tied to a vendor’s solution for a critical part of our infrastructure.
+Kops — we are big fans of kops, and we use it to deploy our cloud “control plane” Kubernetes clusters. Unfortunately, when we began our Edge Compute journey, kops was not a viable bare metal solution. We look forward to seeing how it develops in the future.
+Kubeadm — another Kubernetes proper clustering utility. It looks promising, but is definitely much more complex (perhaps due to its flexibility) than some of the alternatives, including…
+RKE
+In our first iteration, RKE was our winner. RKE is a Kubernetes clustering engine provided by Rancher Labs. While we decided NOT to use Rancher 2.0 to manage our clusters, we do like the simplicity of using RKE to initialize and maintain a cluster.
+
+To use RKE, you need to determine a leader node and provide it with a configuration YAML file that includes data about the cluster, including the host names for the nodes that will participate in the clustering activity.
+If nodes in the cluster are added or removed (or die), the configuration file needs to remain an accurate representation of the current and to-be member nodes. Failure to keep this configuration up-to-date will result in failed clustering attempts. While we believe the absence of a node should not fail the clustering initialization/update, that’s the way it works today.
+Installation Process
+Our installation process in restaurants is very simple to perform — unbox the devices, plug them into power and the labeled switch ports, and that’s it. They automatically boot on power, and they self-bootstrap and cluster. While this is awesome since it enables a non-technical user to execute installations and replacements without any knowledge of Kubernetes or even the overall architecture, it does create a need for a much more sophisticated bootstrapping process.
+The to-be cluster nodes need to coordinate with each other to determine who is going to participate in clustering. They also need to elect a leader to execute the cluster creation via RKE.
+Introducing Highlander
+To solve this problem, we developed Highlander… because there can be only one. Cluster initiator, that is. One cluster initiator.
+
+Highlander is part of our base Edge image. When each node boots, it UDP broadcasts its presence and asks if there is an established leader. It also begins to listen itself. After a few seconds with no replies, it will send another broadcast announcing that it has declared itself the leader. Are there any objections? Should nobody object, the node will soon establish itself as the cluster leader and respond to any future requests asking about an available leader.
+If another node has already claimed the role of leader, the new node will acknowledge the declaration. The existing leader will “RKE up” to include the new node in the cluster.
+The nodes gossip periodically to ensure the leader is still there. If the leader ever dies, a new leader will be elected through a simple protocol that uses random sleeps and leader declarations. While this is simple and unsophisticated, it is easy to reason about and understand, and it works effectively at scale.
+Once leader election is complete, highlander also ensures the cluster is properly configured. In our environment, this includes:
+Switching out KubeDNS for CoreDNS
+Setting up Istio / other core control plane pods
+OAuth identity negotiation **
+**each of our nodes gets its own identity and a short-lived JWT for accessing authenticated resources. Highlander provisions this identity and makes the token available as a Kubernetes secret.
+Process in aggregate
+While we mostly focused on cluster initialization during this post, here is a look at our entire process for node initialization on-the-fly, in-restaurant.
+
+(Inevitable) Failures
+Infrastructure breaks and we want to be resilient to its failure. Node failures can occur for many reasons: device failure, network switch failure, power cords accidentally unplugged. In all of these cases, we have to quickly diagnose what is a true failure and what is an unrelated anomaly. That process is complex and the subject for another post in the future. That said, when we diagnose failures, our process is to drop ship a base image replacement to the restaurant (complete with visual installation instructions) and have the Owner/Operator or their team execute the placement.
+Meanwhile, our Kubernetes cluster will continue to operate on a reduced number of nodes, and will be ready to welcome the replacement node when it arrives.
