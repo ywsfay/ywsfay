@@ -1,0 +1,35 @@
+Thinking in Kubernetes (K8s)
+When I was first introduced to Kubernetes, it was a “Container Orchestration Platform” at the edge of my professional radar. Kubernetes was an odd word — it didn’t roll well in the anglophone mouth.
+When I became involved with the platform, I realised there was something to it. The level of automation it brought to the table was unlike anything I’d seen before. The doors it opened couldn’t be closed. I had to learn more.
+Then I ran into a problem.
+When you’re thinking traditional, you’re fighting against Kubernetes
+Kubernetes isn’t some pre-packaged silver bullet solution — it doesn’t claim to be. Yet many approach it from that perspective. Unlike the next Oracle monstrosity that is going to literally change your business (read: cost you money), Kubernetes plays a more humble role. Until you’re in the right mindset, that role might seem odd.
+So I thought I’d write down some mindset changes that Kubernetes encourages. If you can get these out of the way early, you’re going to have a much smoother journey through the Kubernetes jungle.
+Inversion of Control
+Kubernetes comes with incredible automation built in. Automatic redundancy, high availability, self-healing, configuration management and much more. I have seen people tie themselves in knots over this.
+They’ve spent years hacking together their own automation and now there’s a solution that brings a lot more to the table. Naturally, they keep their procedural mindset.
+
+Declare, don’t dictate
+Luckily, embracing this automation is simple. When you’re defining Kubernetes resources, be declarative. Tell Kubernetes what “good” looks like. The aim is to put as much into the K8s control world as possible. Supplement with automation where needed.
+Let Kubernetes do what it’s best at and you can fill in the blanks for your business.
+Platform Thinking
+Many of the Kubernetes concepts lend themselves well to platform thinking. This encourages the building of shared, central services and removes the waste and rework of projects with bespoke solutions.
+
+Platform thinking comes with risks. If everyone relies on the same shared monitoring service, a single outage can have a huge blast radius. You can decide a separation for your monitoring solution to limit the impact of this, but, ultimately, you’re increasing the responsibility of individual services.
+Kubernetes can happily support either, but when you’re all living in the same cluster, centralised strategic services are built more naturally than product-specific services in a silo. Their benefits are obvious:
+Experiments go live with access to production-grade services
+Because you lower the cost of deploying something new, many more new things are tried and greater experimentation leads to greater learning
+Taking the “Product” Out of “Production”
+Unless your product is very large, it is likely that your product will be deployed into an existing production cluster. This decoupling of your production environment from your application is, initially, strange.
+With different technologies, you simply build your environment when the product is ready to ship. You own that environment in its entirety.
+But now? You’re in a shared living space — simultaneously the tenant and guest. It’s uncomfortable, it feels like a restriction of autonomy. Previously, you could do as you pleased with your environment. Now? Everything has someone else’s name on it and you’ve got to be careful. So how do you break out of this rut?
+Collaboration
+This can be unnerving. You don’t know these other folks. What if they’re total mavericks? Well, what you’re experiencing is the beginning of trust. You’ve recognised that you need to rely on another party. There’s a shared responsibility. The best way to handle this? Meet up, explain your anxieties, set up some loose ways of working and regularly improve them.
+Your shared Kubernetes cluster is going to force you to talk. If you avoid talking, you’re going to struggle. Be prepared for a much more active, tight form of collaboration. It will take some getting used to and it may feel like an invasion into the sacred space that your team occupies, but with a little practice it will become perfectly natural and the benefits will present themselves.
+Automation — A Lot of It
+Kubernetes encourages declarative configuration, rather than a series of procedural commands that strictly tell K8s what to do. This is one of its great strengths and it improves the automation of your applications. You’re going to love simply writing YAML and pushing it to Kubernetes, safe in the knowledge that the API server’s got you covered.
+Then you’re going to look at everything else around your cluster…
+Those manually created databases, hand crafted security groups, stray EC2 instances. You’re going to long for the sweet automated bliss of your cluster. But you’ve stepped out of Plato’s cave and, try as you might, you can’t go back to the way things were. It’s time to roll up your sleeves.
+
+That skull represents the dodgy scripts on your DBAs laptop
+Kubernetes sets the bar and it’s easy to make it your mission to drag everything else up to that standard. My only advice here is this: be economical. Automation is great but the more you automate, the more you need to manage. Often, the more difficult question to answer is how you’re going to operationally maintain all of your automated tools, once you’ve built them.
