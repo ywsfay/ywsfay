@@ -1,0 +1,38 @@
+How we saved over $240K per year by replacing Mixpanel with BigQuery, Dataflow & Kubernetes
+Traditionally, a lot of companies rely on Mixpanel for product analytics to understand each user’s journey. However, if your product becomes a success and your volume of events is getting high, Mixpanel may become somewhat expensive. In this post we are going to review one of our projects with Jelly Button to design their own event-analytics solution based on Google Cloud Platform in a very efficient way and which is going to save Jelly Button about quarter million dollars each year.
+Jelly Button Games develops and publishes interactive mobile and web games. It was founded in 2011 and the company’s flagship title is Pirate Kings, where players battle their friends to conquer exotic islands, amass gold, and become the lord of the high seas in what Jelly Button Games calls a “mingle-player” experience. Launched in 2014, the game has achieved around 70 million downloads across iOS, Android, and Facebook.
+Here at DoiT International, we help startups to architect, build and operate perfectly robust data solutions based on Google Cloud Platform and Amazon Web Services. Together with Jelly Button’s team led by Meir Shitrit and Nir Shney-Dor, we have build a global, robust and secure data pipeline solution which processes and stores millions of events every hour.
+We have used Google’s Reference Architecture for Mobile Gaming Analytics as a baseline for our solution.
+
+Google Reference Architecture for Mobile Gaming Analytics
+The Requirements
+Jelly Button are building games which are played by over 70 millions of people using their smartphones. Each player is sending game-related events to the analytics backend. These events should be stored for later processing and analysis. Jelly Button uses this data for game analytics, research and marketing.
+This backend should maintain a very low latency so that the mobile application has minimal time to wait when sending these events as well as processing as many events as possible every second. Having said that, the event data is crucial and no data loss can be tolerated.
+Finally the event data must be available for analysis as soon as possible and the millions of events coming in every hour must not make it hard to perform complex analysis.
+The Solution
+From the start, it was obvious that the best tool to store and analyze this kind of data is Google BigQuery as it allows virtually unlimited storage, blazing fast queries and have built-in ingestion mechanism allowing to insert up to 100K records per second per table.
+On the other hand we needed a fast, global and robust backend infrastructure that could be automatically scaled up to support low latency for millions of users or scaled down to keep the cost to the minimum. We have decided to use Google Container Engine (GKE) which is managed Kubernetes cluster.
+Using Kubernetes we managed to set up very efficient backend deployed as a federated cluster— one cluster in United States and additional cluster in Europe, both serving traffic coming from a single global Google HTTP/S Load Balancer with a built in geo-awareness, thus providing a minimal latency to mobile clients.
+Another challenge we had was about relaying the events received by the backend and reliably storing them in Google BigQuery. To keep the backend’s low latency, we decided to use Google Cloud Pub/Sub. The Pub/Sub gives us a very fast messaging medium supporting unlimited rate with guaranteed worldwide delivery as well as up to 7 days of message persistency.
+
+Cloud Pub/Sub publish subscribe model with persistent storage
+The final component we needed was an ETL that can handle the large amount of messages coming from Google PubSub and perform filtering, mapping and aggregations on the raw data before storing it in Google BigQuery for analysis. Luckily for us, Google Dataflow provides a fully managed cluster of workers that can run our ETL in streaming mode to handle these transformations and aggregations in near realtime, making the data available for analysis almost instantly.
+
+Solution Overview
+Kubernetes
+In our setup, each pod contains two containers. An nginx container and a nodejs container with the backend code.
+The backend code is essentially a simple nodejs based server
+
+The backend simply adds some metadata and pushes the payload along with it to Google PubSub. No extra work is done here to maintain low latency.
+The deployed service is automatically scaled using an Kubernetes’ Horizontal Pod Autoscaler
+
+The cluster itself is also autoscaled using Google Container Engine Node Autoscaler so nodes are automatically scaled up and down as well.
+Google Cloud Dataflow
+Most of the transformation and aggregation logic that is required is being done inside the Dataflow pipeline. This way it could be executed in an asynchronous, non-blocking way using Dataflow’s distributed computing cluster.
+The basic pipeline simply parses messages coming from Google PubSub and embeds some of the fields into BigQuery columns while preserving the rest of the data as a json object stored in a BigQuery as a string column.
+
+To add more functionality, usually we only need to edit the relevant Mapping class
+
+Please, note the line:
+options.setStreaming(true);
+This makes the Dataflow pipeline to start in streaming mode. It will not stop until manually stopped and the pipeline will keep processing messages as they arrive to Google Pub/Sub in near realtime.
