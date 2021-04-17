@@ -1,0 +1,13 @@
+Minecraft as a k8s admin tool
+Disclaimer: In my spare time I like to build tools that no one really needs, and this is one of them.
+Have you ever thought to yourself: Why don’t we have an immersive 3D sandbox user interface to manage workloads on my favorite container orchestrator? No? Well here it is anyway.
+The inspiration for KubeCraft Admin come from watching a video on the MakeCode platform which showed that it’s possible through a WebSocket server to programmatically manipulate the world in Minecraft.
+
+My project populates the world with different animals in different pens (one for each namespace). The animals each correspond to a resource in your k8s cluster.
+Want to read this story later? Save it in Journal.
+Pigs are Pods
+Cows are ReplicaSets
+Chickens are Services
+Horses are Deployments
+Once you connect to the KubeCraft Admin WS and stand on the beacon, connection is made to the designated k8s cluster. Animals will spawn to reflect the cluster state. Animals will die when resources get deleted, conversely killing an animal in Minecraft will delete the corresponding resource.
+Time to spruce up your resume and add Minecraft to your professional skills! :)
