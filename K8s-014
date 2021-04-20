@@ -1,0 +1,142 @@
+Dockerfile Go HEALTHCHECKs & K8s
+I’d not encountered Docker’s HEALTHCHECK until recently while exploring Google Trillian and the project’s work running Trillian on both Kubernetes and locally using Docker Compose.
+While exploring ways to minimize the container image sizes, I ran afoul of Docker’s HEALTHCHECK’s need to have something in-container to perform the healthcheck, often curl.
+In a minimal container, there is no curl.
+NB: curl is excellent. This is not a criticism of curl. It’s a criticism of bloat in your container images.
+Clever folks have considered this before and this story summarizes their work and a solution. Here’s Elton Stoneham’s “Why Not To Use curl or iwr”
+I’ve discussed the benefits of minimal container images previously. In this case, Trillian is written in Golang and this presents the opportunity to use scratch containers or — in this case — I thought I’d try Google’s distroless images. These images and busybox and alpine do *not* include curl.
+Here’s an example Dockerfile w/ a healthcheck:
+ENV HTTP_PORT=8091
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost:$HTTP_PORT/debug/vars || exit 1
+This depends on curl but the need for curl is trivial. curl is used to make the HTTP GET. Much of the work (interval, timeout, response handling) is built into Dockerfile’s HEALTHCHECK functionality.
+Golang HEALTHCHECK
+So, if we can replace the general-purpose functionality of curl with something simpler (preferably in Golang), we’re golden.
+See Soluto’s golang-docker-healthcheck-example.
+Exactly!
+With full credit to them, here’s my slight tweak to their solution:
+
+You may create a static binary from this and incorporate it into your Docker images. This is for Linux AMD64:
+CGO_ENABLED=0 \
+GOOS=linux \
+GOARCH=amd64 \
+go build -a -tags netgo  healthcheck.go
+Alternatively, and in the case with distroless, there’s a convenient pattern that combines Docker’s multi-stage builds.
+Multi-stage Builds
+Before: This Dockerfile generates a 1.2GB image (and requires curl).
+FROM golang:1.10
+ENV HTTP_PORT=8091
+ADD . /go/src/github.com/google/trillian
+WORKDIR /go/src/github.com/google/trillian
+RUN go get ./server/trillian_log_server
+ENTRYPOINT ["/go/bin/trillian_log_server"]
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost:$HTTP_PORT/debug/vars || exit 1
+Convert to multi-stage so that we build first and then copy our binary into a runtime image. We must fix the HEALTHCHECK here too because curl goes bye-byes with distroless.
+After: This Dockerfile generates a 45MB image (and dumps curl)
+FROM golang:1.10 as build
+ADD . /go/src/github.com/google/trillian
+WORKDIR /go/src/github.com/google/trillian
+RUN go get ./server/trillian_log_server
+RUN go get ./healthcheck
+FROM gcr.io/distroless/base as runtime
+COPY --from=build /go/bin/trillian_log_server /
+COPY --from=build /go/bin/healthcheck /
+ENTRYPOINT ["/trillian_log_server"]
+HEALTHCHECK \
+  --interval=5m \
+  --timeout=3s \
+  CMD ["/healthcheck","http://localhost:8091/debug/vars"]
+OK, let’s walk through this:
+We need a way to reference one step from another and as [name] is how we do that. We’ll call the build step… build:
+FROM golang:1.10 as build
+I cheated and add the Golang healthcheck directly to the clone of the Trillian repo. This means that healthcheck is now part of the Trillian tree that’s added by the ADD command which means I can do this to build it alongside building, in this case, trillian_log_server:
+RUN go get ./healthcheck
+OK, then we move into the distroless container. Even though it’s not-used, this gets named runtime:
+FROM gcr.io/distroless/base as runtime
+NB There are images for many runtimes under distroless, check the list here. With Golang, we don’t need much and so we’re able to the use distroless base image.
+Now we need to use the build reference. We need to copy binaries form the build image into the runtime image. We use COPY — from-build for this. One for each of the binaries. The server and the healthcheck:
+COPY --from=build /go/bin/trillian_log_server /
+COPY --from=build /go/bin/healthcheck /
+Unfortunately (and I don’t understand why this is — anyone?) it’s not possible to use the environment variable (${HTTP_PORT}) in this version. For some reason it just doesn’t work :-(. Docker’s environment variable mapping in images is *always* challenging.
+We define the entrypoint for the container, to run the server.
+We define our healthcheck with the explicit port mapping:
+HEALTHCHECK \
+  --interval=5m \
+  --timeout=3s \
+  CMD ["/healthcheck","http://localhost:8091/debug/vars"]
+The healthcheck now points to the Golang binary (/healthcheck) and our designated endpoint (/debug/vars) and — most importantly — there are no extraneous dependencies or tooling. Two little Golang binaries.
+If were were to deploy such a container locally, Docker’s CLI enriches e.g. container listings, with the state of the healthcheck:
+docker container ls
+CONTAINER ID        COMMAND               STATUS
+1c64d39fbb9a        /trillian_log_server  Up 15 seconds (healthy)
+And you can enumerate the healthchecks:
+docker inspect --format='{{json .State.Health}}' 1c64 \
+| jq .
+{
+  "Status": "healthy",
+  "FailingStreak": 0,
+  "Log": [
+    {
+      "Start": "2018-05-30T00:00:00.000000000-07:00",
+      "End": "2018-05-30T00:00:00.000000000-07:00",
+      "ExitCode": 0,
+      "Output": "http://localhost:8091/debug/vars"
+    },
+    {
+      "Start": "2018-05-30T00:00:00.000000000-07:00",
+      "End": "2018-05-30T00:00:00.000000000-07:00",
+      "ExitCode": 0,
+      "Output": "http://localhost:8091/debug/vars"
+    }
+  ]
+}
+With Trillian, this image can be deployed to Kubernetes. You can grab its Pod (name), port-forward to it and test the healthcheck endpoint:
+kubectl get pods
+NAME                                             READY     STATUS
+trillian-etcd-cluster-9hfhkxxcsf                 1/1       Running
+trillian-etcd-cluster-gbz4mfqgvr                 1/1       Running
+trillian-etcd-cluster-z268b5z9h2                 1/1       Running
+trillian-etcd-operator-5bfd8fc6db-s9r2b          1/1       Running
+trillian-logserver-deployment-546d8bd546-7l77l   2/2       Running
+trillian-logserver-deployment-546d8bd546-g8gdw   2/2       Running
+trillian-logserver-deployment-546d8bd546-pnlfr   2/2       Running
+trillian-logserver-deployment-546d8bd546-z6n74   2/2       Running
+trillian-logsigner-deployment-5548878bbd-knlvr   2/2       Running
+trillian-logsigner-deployment-5548878bbd-xfph8   2/2       Running
+Arbitrarily grabbing trillian-logserver-deployment-546d8bd546-pnlfr:
+kubectl port-forward \
+trillian-logserver-deployment-546d8bd546-pnlfr \
+8091:8091
+Forwarding from 127.0.0.1:8091 -> 8091
+Forwarding from [::1]:8091 -> 8091
+And then:
+curl localhost:8091/debug/vars
+ok
+Kubernetes
+This brings us to the second suggestion which becomes more consistent when using Docker and Kubernetes.
+Digression: Kubernetes provides liveness and readiness probes. These apply at the container level. Pods aggregate containers. So Pods may have specific liveness and readiness probes per container. Liveness corresponds to healthchecks (is the container running) whereas readiness — as the name suggests — is to determine whether a container is ready to accept traffic; a server in a container may start and expose an endpoint (liveness) but it may require additional time before it is ready to accept traffic (readiness).
+Quite frequently, Kubernetes liveness probes mirror the Docker HEALTHCHECK and use curl, e.g.:
+livenessProbe:
+  exec:
+    command:
+    - curl
+    - --fail
+    - http://localhost:8091/debug/vars
+  failureThreshold: 3
+  periodSeconds: 30
+But, we’ve dumped curl and so we can’t use it here either.
+We could replace curl with our Golang/healthcheck but we needn’t do so. Kubernetes’ developers realize that most healthchecks are simple HTTP GETs and so… we can just do this:
+livenessProbe:
+  httpGet:
+    path: /debug/vars
+    port: 8091
+  failureThreshold: 3
+  periodSeconds: 30
+  timeoutSeconds: 5
+Conclusion
+Minimizing container image scope (and thus size) is a good thing. Doing one thing well is a good principal because it’s corollary is that, if you do too many things, you’ll do most badly. In container images, too many things, means more opportunities for failure, more software pollution, more wasted energy, *and* particularly important: more security problems.
+Even if the only extraneous tool in our container images were curl, every time curl is patched, we’d need to rebuild *every* container image that uses it.
+Excluding from your container images the garage full of binaries that you may one day use has mostly benefits but, sometimes a useful tool needs to go too. This post provided a straightforward way to replace curl as a healthchecking tool with something simpler.
+Feedback always welcome.
+That’s all!
