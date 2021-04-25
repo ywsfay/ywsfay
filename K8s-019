@@ -1,0 +1,167 @@
+Deploying a Java application in Kubernetes(k8s)
+Here we will start a project that shows how to deploy the application on Kubernetes using Frontend and Backend services
+
+Once our K8s cluster is running, we will be deploying containerized apps.To work with App deployment we need to create k8s deployment type configuration. This will help us to create and update instances to our apps and moreover helps us in the provisioning app cluster including pod, service, replica set, and replication controller.
+“We need to make a setup in a way that apps deployed on the pod is able to talk to each other “
+In this setup, we must a LB setting on top of one application which will divert traffic to a set of pods, and later they will talk to backend pods. The communication between pods happens via the service object built-in Kubernetes.
+The first step in moving to Kubernetes is to create a Pod that hosts the application container. But since pods are ephemeral by nature, we need to create a higher controller that takes care of our pod (restart if it crashes, move it around nodes, etc.).
+Nginx Load Balancer Yaml File
+apiVersion: v1
+kind: Service
+metadata: 
+ name: dev-nginx
+  labels:
+    k8s-app: dev-api
+spec:
+ type: NodePort
+ ports:
+ - port: 8080
+    nodePort: 31900 name: devnginx
+ selector:
+  k8s-app: appname
+  component: nginx
+  env: dev
+Nginx Replication Controller Yaml
+apiVersion:v1
+kind:ReplicationController
+ metadata:
+   name: appname
+spec:
+ replicas:replica_count
+ template: 
+   metadata:
+    name: appname
+    labels:
+      k8s-app:   appname
+      component:nginx
+      env:env_name
+spec:
+  nodeSelector:
+   resource-group: dev
+ containers:
+  - name: appname 
+  image:IMAGE_TEMPLATE 
+  imagePullPolicy:Always 
+  ports: 
+   -containerPort: 8080
+   resources:
+    requests:
+     memory: "request_mem"
+     cpu: "request_cpu" 
+    limits:
+      memory: "limit_mem"
+      cpu: "limit_cpu" 
+    env: - name: BACKEND_HOST
+    value: dev-env_name-node:3000
+Now, in order to create an Ingress, we need to create a Service first. Our frontend-svc.yml looks as follows:
+Frontend Service Yaml File
+apiVersion: v1
+kind: Service
+metadata: 
+ name: appname
+  labels:
+    k8s-app: appname
+spec:
+ type: NodePort
+ ports
+ - name:http
+   port: 3000
+   protocol:TCP
+   targetPort: 3000
+ selector:
+  k8s-app: appname
+  component: java
+  env: dev
+Frontend Replication Controller Yaml File
+apiVersion:v1
+kind:ReplicationController
+ metadata:
+   name: Frontend
+spec:
+ replicas:3
+ template: 
+   metadata:
+    name: Frontend
+    labels:
+      k8s-app: Frontend
+      component:java
+      env:dev
+spec:
+  nodeSelector:
+   resource-group: dev
+ containers:
+  - name: appname 
+  image:IMAGE_TEMPLATE 
+  imagePullPolicy:Always 
+  ports: 
+   -containerPort:3000
+   resources:
+    requests:
+     memory: "request_mem"
+     cpu: "request_cpu" 
+    limits:
+      memory: "limit_mem"
+      cpu: "limit_cpu" 
+    env:
+     -name: ENV
+     valueFrom:
+     configMapKeyRef:
+     name:appname
+     Key:congfig-env
+Backend Service Yaml File
+apiVersion: v1
+kind: Service
+metadata: 
+ name: backend
+  labels:
+    k8s-app: backend
+spec:
+ type: NodePort
+ ports
+ - name:http
+   port: 9010
+   protocol:TCP
+   targetPort: 9000
+ selector:
+  k8s-app: appname
+  component: play
+  env: dev
+Backed Replication Controller Yaml File
+apiVersion:v1
+kind:ReplicationController
+ metadata:
+   name: backend
+spec:
+ replicas:3
+ template: 
+   metadata:
+    name: backend
+    labels:
+      k8s-app: backend
+      component:play
+      env:dev
+spec:
+  nodeSelector:
+   resource-group: dev
+ containers:
+  - name: appname 
+  image:IMAGE_TEMPLATE 
+  imagePullPolicy:Always 
+  ports: 
+   -containerPort:9000
+   command: [ “./docker-entrypoint.sh” ]
+   resources:
+    requests:
+     memory: "request_mem"
+     cpu: "request_cpu" 
+    limits:
+      memory: "limit_mem"
+      cpu: "limit_cpu" 
+   volumeMounts:
+     — name: config-volume
+     mountPath: /app/vipin/play/conf
+ volumes:
+   -name:config-volume
+  configMap:
+  name: appname
+Thanks
