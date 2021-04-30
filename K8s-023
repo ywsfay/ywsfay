@@ -1,0 +1,132 @@
+How to deploy StatefulSets in Kubernetes (K8s)?
+StatefulSets will represent the set of pods with different (unique), persistent identities, and elastic hostnames (stable). It makes you assure about the ordering of scaling and deployments
+StatefulSets are valuable for applications that require one or more of the following:
+Stable, unique network identifiers
+Stable, persistent storage
+Ordered, graceful deployment and scaling
+Ordered, graceful deletion and termination
+If an application doesn’t require any stable identifiers or ordered deployment, deletion, or scaling, you should deploy your application with a controller such as Deployments or ReplicaSets that provides a set of stateless replicas.
+StatefulSet Components
+A Headless Service
+A StatefulSet
+A PersistentVolume
+
+Below are manifests of a Service, StatefulSet, and Persistent volume:
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+    name: web
+  clusterIP: None
+  selector:
+    app: nginx
+2
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  serviceName: "nginx"
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        ports:
+        - containerPort: 80
+          name: web
+        volumeMounts:
+        - name: www
+          mountPath: /usr/share/nginx/html
+      volumes:
+      - name: www
+        persistentVolumeClaim:
+          claimName: myclaim
+3
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: myclaim
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 8Gi
+Create and manage StatefulSets
+Create a stateful set
+kubectl create -f statefulset.yaml
+service "nginx" created
+statefulset.apps "web" created
+It will create three Pods named web-0,web-1,web-2
+kubectl get pods
+NAME      READY     STATUS    RESTARTS   AGE
+web-0     1/1       Running   0          1m
+web-1     1/1       Running   0          46s
+web-2     1/1       Running   0          18s
+Check services in Kubernetes
+kubectl get svc nginx
+NAME      TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+nginx     ClusterIP   None         < none >      80/TCP    2m
+List your stateful sets:
+kubectl get statefulsets
+Get details of a stateful set:
+kubectl describe statefulset web
+Edit a stateful set:
+kubectl edit statefulset web
+Scaling a stateful set:
+Scaling a StatefulSet refers to increasing or decreasing the number of replicas.
+Scale-up a stateful set:
+kubectl scale statefulset web --replicas=5 
+statefulset.apps "web" scaled
+Check and get pods
+kubectl get pods -l app=nginx
+NAME      READY     STATUS    RESTARTS   AGE
+web-0     1/1       Running   0          11m
+web-1     1/1       Running   0          10m
+web-2     1/1       Running   0          10m
+web-3     1/1       Running   0          33s
+web-4     1/1       Running   0          19s
+Scale down a stateful set:
+kubectl scale statefulset web --replicas=2 
+statefulset.apps "web" scaled
+Check the scaling down of pods
+kubectl get pods -w -l app=nginx
+NAME      READY     STATUS        RESTARTS   AGE
+web-0     1/1       Running       0          13m
+web-1     1/1       Running       0          12m
+web-2     0/1       Terminating   0          12m
+web-3     0/1       Terminating   0          2m
+web-4     0/1       Terminating   0          1m
+Check again :
+kubectl get pods -l app=nginx
+NAME      READY     STATUS    RESTARTS   AGE
+web-0     1/1       Running   0          13m
+web-1     1/1       Running   0          12m
+Delete a stateful set
+kubectl delete statefulset web 
+statefulset.apps "web" deleted
+You must delete the Service manually.
+kubectl delete service nginx 
+service "nginx" deleted
+Limitations:
+StatefulSet was a beta resource before 1.9 and not available in any Kubernetes release before 1.5.
+The storage for a given Pod must either be provisioned by a PersistentVolume Provisioner based on the requested storage class or pre-provisioned by an admin.
+Deleting and/or scaling a StatefulSet down will not delete the volumes associated with the StatefulSet. This is done to ensure data safety, which is generally more valuable than an automatic purge of all related StatefulSet resources.
+StatefulSets currently require a Headless Service to be responsible for the network identity of the Pods. You are responsible for creating this Service.
+StatefulSets do not provide any guarantees on the termination of pods when a StatefulSet is deleted. To achieve ordered and graceful termination of the pods in the StatefulSet, it is possible to scale the StatefulSet down to 0 before deletion.
