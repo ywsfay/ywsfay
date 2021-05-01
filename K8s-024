@@ -1,0 +1,145 @@
+How to Provision Node Labels and Selectors in Kubernetes? (K8s)
+Labels selectors are core grouping primitive in Kubernetes. They are used by the users to select a set of objects. Kubernetes API currently supports two types of selectors − Equality-based selectors.
+
+Labels and selectors
+You can constrain a pod to run only on particular nodes. The recommended approach to do this is to use label selectors to make the selection.
+Types of Kubernetes Selector
+Following are the types of Kubernetes selector.
+
+1. Label Selector
+We apply labels to the Kubernetes objects to organize or select a group of objects. Labels can be attached at creation time or added and modified at any time.
+apiVersion: v1
+kind: Pod
+metadata:
+name: apache-web-server
+labels:
+env: development
+app: apache-web
+spec:
+containers:
+- name: apache
+image: apache
+ports:
+- containerPort: 80
+List all the pods with labels using the below command:
+
+kubectl get pods --show-labels
+NAME        READY     STATUS    RESTARTS    AGE      LABELS
+apache-web  1/1       Running    0          10m    env=development
+You can add a label to the pod as:
+kubectl label pods apache-web owner=devops
+kubectl get pods — show-labels
+NAME        READY   STATUS  RESTARTS   AGE    LABELS          apache-web   1/1    Running   0        16 env=development,owner=devops
+The --selector the option can be abbreviated to -l, so to select pods that are labeled with env=development, do:
+kubectl get pods -l env=development
+NAME        READY     STATUS    RESTARTS   AGE 
+apache-web   1/1       Running   0          27m
+2. Field Selector
+Field selector is used to querying Kubernetes objects based on the value of one or more resource fields that we need to define when we create the objects.
+$kubectl get pods — field-selector=metadata.name=apache-web
+$kubectl get pods — field-selector=metadata.namespace=default
+This kubectl command selects all Pods for which the value of the status.phase field is Running:
+kubectl get pods --field-selector status.phase=Running
+3. Node Selector
+The node selector is used when we have to deploy a pod or group of pods on a specific group of nodes that passed the criteria defined in the configuration file.
+$kubectl label <object_type> <object_name> key=value
+$kubectl label node server1 disk=hdd
+Explanation: In the above example, rename the node ‘server1’ with the key is equal to “disk” and the value for this key is “HDD”. If the key is already assigned with a different value and want to change it then need to use the option ‘–overwrite’ as below: –
+$kubectl lable node server1 disk=hdd --overwrite
+Yaml file
+--- 
+apiVersion: v1
+app: apache-web
+containers: 
+  - 
+    name: apache
+disk: hdd
+env: prod
+image: apache
+kind: Pod
+labels: ~
+metadata: ~
+name: apache-web-hdd
+nodeSelector: ~
+ports: 
+  - 
+    containerPort: 80
+spec: ~
+GKE (Google Kubernetes Engine)
+You can attach labels to nodes using the “kubectl label nodes” command.
+List all nodes:
+kubectl get nodes
+NAME                         STATUS ROLES     AGE VERSION
+gke-cluster-1-75a9c0b4-83dn   Ready  < none >  3h  v1.11.6-gke.2
+gke-cluster-1-75a9c0b4-cgzw   Ready  < none >  3h  v1.11.6-gke.2
+gke-cluster-1-75a9c0b4-rd54   Ready  < none >  3h  v1.11.6-gke.2
+Add a label to a node:
+kubectl label nodes gke-cluster-1-75a9c0b4-83dn env=prod node "gke-cluster-1-75a9c0b4-83dn" labeled
+You can verify that it worked by running
+kubectl get nodes --show-labels
+or you can also use
+kubectl describe node gke-cluster-1-75a9c0b4-83dn
+Name:   gke-cluster-1-75a9c0b4-83dn
+Roles:  < none >
+Labels: beta.kubernetes.io/arch=amd64
+        beta.kubernetes.io/fluentd-ds-ready=true
+        beta.kubernetes.io/instance-type=n1-standard-1
+        beta.kubernetes.io/os=linux
+        cloud.google.com/gke-nodepool=default-pool
+        cloud.google.com/gke-os-distribution=cos
+        env=prod
+        failure-domain.beta.kubernetes.io/region=us-central1
+............
+
+Built-in node labels
+In addition to the labels you attach, nodes will have a standard set of labels.
+Some of the labels are:
+kubernetes.io/hostname
+failure-domain.beta.kubernetes.io/zone
+failure-domain.beta.kubernetes.io/region
+beta.kubernetes.io/instance-type
+beta.kubernetes.io/os
+beta.kubernetes.io/arch
+Node Selectors
+nodeSelector is the simplest recommended form of node selection constraint.
+nodeSelector is a field of PodSpec. It specifies a map of key-value pairs.
+Pod manifest :
+--- 
+apiVersion: v1
+kind: Pod
+metadata: 
+  labels: 
+    env: test
+  name: nginx
+spec: 
+  containers: 
+    - 
+      image: nginx
+      name: nginx
+  nodeSelector: 
+    env: prod
+If you are using workload controller for your application, you have to specify nodeSelector in pod template (spec. template. spec. nodeSelector).
+--- 
+spec: 
+  replicas: 3
+  selector: 
+    matchLabels: 
+      app: webapp
+      tier: frontend
+  template: 
+    metadata: 
+      labels: 
+        app: webapp
+        tier: frontend
+    spec: 
+      containers: 
+        - 
+          image: "webapp:1.0"
+          name: webapp
+          ports: 
+            - 
+              containerPort: 80
+      nodeSelector: 
+        env: prod
+env: prod
+Thanks
