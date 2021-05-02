@@ -1,0 +1,94 @@
+Single and Multi-Port Service in Kubernetes (K8s)
+The set of pods can be defined as a service. It provides the one IP and DNS name from that pods that are often accessed. We can easily manage load balancing configurations with help of service, It helps and makes it easy for pods to scale out.
+The REST object in the K8s platform is defined as a service where API-server on k8s master creates new instances
+Service without Selector in k8s:
+--- 
+apiVersion: v1
+kind: Service
+metadata: ~
+spec: ~
+ name: k8s_service
+ ports: ~
+ targetPort: 30888
+ - port: 8080
+The above configuration will create a service with the name k8s_service.
+2. Service Config File with Selector in k8s :
+apiVersion: v1
+kind: Service
+ metadata: 
+name: k8s_service
+spec:
+  selector:
+  application: "My Application"-----------> selector
+ports: 
+- port: 8080 
+targetPort: 30888
+We will create an endpoint here as to transfer the traffic we have selector option enabled here
+--- 
+apiVersion: v1
+kind: Endpoints
+metadata: ~
+subnets: ~
+ address: 
+  ip: "192.158.158.30"
+  ports: ~
+ name: k8s_service
+ - port: 8080
+In the above code, we have created an endpoint that will route the traffic to the endpoint defined as 192.158.158.30:8080.
+3. Multi-Port Service Creation:
+--- 
+apiVersion: v1
+kind: Service
+metadata: "~ name:k8s_service"
+spec: "selector:  application:\"My Application\" " ------> selector
+? "  -name"
+: http
+? "  Port"
+: 443
+? "  Protocol"
+: TCP
+? "  TCP port"
+: 80 
+? "  protocol"
+: ~
+? "  targetPort"
+: 30889
+: 30888
+ClusterIP: "10.30.10.122"
+ ports: ~
+Types of Services in Kubernetes:
+ClusterIP in K8s− This helps in restricting the service within the cluster. It exposes the service at intervals the outlined Kubernetes cluster.
+spec:
+  type: NodePort
+  ports:
+  -port: 8080
+   nodePort: 30888
+   name: NodeportService
+NodePort in k8s− it’ll expose the service on a static port on the deployed node. A ClusterIP service to that NodePort service can route, is mechanically created. The service is accessed from outside the cluster exploitation of the NodeIP:nodePort.
+spec:
+  ports:
+  -port: 8080
+   nodePort: 30888
+   name: NodeportService
+   clusterIP:10.22.31.189
+Load Balancer in k8s−. NodePort and ClusterIP services are Provisioned automatically to which the ELB will route the traffic forward to the application.
+A full-service YAML file with service kind as Node Port. Let us create one:
+--- 
+apiVersion: v1
+k8s-app: appname
+kind: Service
+labels: ~
+metadata: ~
+name: appname 
+spec: ~
+ component: nginx
+ env: env_name
+ k8s-app: appname
+ name: devnginx
+ nodePort: 30888
+ ports: 
+  - 
+    port: 8080
+ selector: ~
+ type: NodePort
+Thanks
