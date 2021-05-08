@@ -1,0 +1,79 @@
+Loghouse 0.3: a major update for our K8s logs management solution
+The state before this release
+We use loghouse in a wide variety of Kubernetes clusters. Overall, this tool suits both our needs and the requirements of our customers to whom we provide access.
+The main advantages of loghouse are its simple and intuitive interface, the ability to execute SQL queries, high data compression ratio, low resource consumption when inserting data into a database and storing them.
+The biggest issues for regular loghouse users were:
+the use of partition tables joined by a merge table;
+lack of a buffer for smoothing out logs bursts;
+obsolete and potentially vulnerable gem packages in the web dashboard;
+outdated fluentd (loghouse-fluentd:latest did not start due to a troubled gemset).
+Plus, we have accumulated a significant number of issues on GitHub which also should be addressed.
+Major changes in loghouse 0.3.0
+We have actually accumulated a lot of various changes, but in this article, we would like to focus on the most important ones. They can be classified into three main categories:
+improving the log storage and database usage;
+improving log collection techniques;
+adding monitoring.
+1. Improvements in the mechanism of log storage and the database schema
+List of noticable changes:
+Log storage schemes have changed; we have replaced partition tables with a unified table.
+We have switched to a mechanism of the database cleanup built into the latest versions of ClickHouse.
+Now you can use external ClickHouse instances (even in the cluster mode).
+Let’s compare the performance of the old and new schemes. This example is based on a real-life case: searching for unique URLs in the logs of an application serving one popular website.
+SELECT 
+    string_fields.values[indexOf(string_fields.names, 'path')] AS path, 
+    count(*) AS count
+FROM logs
+WHERE (namespace = 'kube-nginx-ingress') AND ((string_fields.values[indexOf(string_fields.names, 'vhost')]) LIKE '%foobar.baz%') AND (date = '2020-02-29')
+GROUP BY string_fields.values[indexOf(string_fields.names, 'path')]
+ORDER BY count DESC
+LIMIT 20
+In this example, loghouse processes tens of millions of records. With the old scheme, it took approximately 20 seconds:
+
+With the new scheme, loghouse managed to do it in 14 seconds:
+
+The migration of the database to the new scheme will be carried out automatically for users of our Helm chart. Otherwise, you will have to do it manually (the detailed description of the process is available in the documentation). In most cases, you just need to run:
+DO_DB_DEPLOY=true rake create_logs_tables
+Also, we have taken an advantage of TTL for ClickHouse tables. It allows you to automatically delete data from the database that is older than some predetermined time frame:
+CREATE TABLE logs
+(
+....
+)
+  ENGINE = MergeTree()
+  PARTITION BY (date)
+  ORDER BY (timestamp, nsec, namespace, container_name)
+  TTL date + toIntervalDay(14)
+  SETTINGS index_granularity = 32768;
+You may find examples of database schemas and configuration files for ClickHouse (including an example of using the CH cluster) in the documentation.
+2. Better log collecting
+Key changes:
+A buffer has been added to smooth out logs bursts.
+Now it is possible to send logs (in JSON format) to loghouse directly from the application over TCP and UDP.
+We added the new in-memory table (i.e., it is stored in the RAM and has a special type — Buffer) called logs_buffer to the database. It will help loghouse to deal with bursts of logs and reduce the load on the database. We would like to thank @Sovigod for the advice on adding this table to the loghouse!
+You can also send application logs directly to loghouse now, even netcat will work for that:
+echo '{"log": {"level": "info", "msg": "hello world"}}' | nc fluentd.loghouse 5170
+You can view these logs by selecting the namespace where loghouse is installed, and then choosing the net stream:
+
+The requirements for the data to be sent are minimal: the message has to be valid JSON with the log field. The log field, in turn, can be either a string or a nested JSON.
+3. Monitoring activities of the logging subsystem
+Another key addition is the ability to monitor fluentd with Prometheus. Now loghouse comes with a Grafana dashboard for displaying all the essential metrics, such as:
+number of active fluentd collectors;
+number of events to be sent to ClickHouse;
+amount of free space in the buffer (in %).
+You can find the source code for the Grafana dashboard in the documentation.
+Our ClickHouse dashboard is based on the dashboard by f1yegor (many thanks to the author!).
+As you can see, the dashboard displays the number of connections to ClickHouse, buffer usage statistics, background tasks, and the number of merges. This information should be enough to evaluate the state of the system:
+
+The fluentd dashboard shows running fluentd instances. That information is of great importance for those who cannot/will not lose logs:
+
+In addition to pod statuses, the dashboard shows uploading statistics for logs. The queue shows if ClickHouse can handle the load or not. This parameter becomes essential in situations when logs cannot be lost.
+The above examples are tailored to our custom configuration of Prometheus Operator, however you still can modify them easily using variables in the settings.
+Finally, as part of our efforts to improve the monitoring capabilities of loghouse, we have built the relevant Docker image with the clickhouse_exporter 0.1.0 release by Percona Labs (the author of the original clickhouse_exporter has seemingly abandoned his creation).
+Future plans
+Enable deploying a ClickHouse cluster in Kubernetes;
+Implement asynchronous processing of log selections and decouple it from the Ruby backend;
+Fix bottlenecks in the Ruby application we know;
+Rewrite some parts of the backend application in Go;
+Implement log filtering.
+Final words
+It is nice to see that the loghouse project has gained a lot of traction. Currently, it has over 600 stars on GitHub as well as a community of users that share their views, successes, and problems.
+When creating loghouse in Flant over two years ago, we were not sure of its prospects, expecting that the market or an Open Source community would offer better solutions. Over time, it has become evident that our approach is quite viable. We still favor loghouse over other solutions, and actively use it in multiple Kubernetes clusters we’re operating.
